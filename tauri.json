@@ -1,0 +1,10 @@
+{
+  "identifier": "com.longcatfrontend.desktop",
+  "version": "0.2.0",
+  "note": "根级元信息。真实 Tauri v2 配置位于 desktop/src-tauri/tauri.conf.json",
+  "build": {
+    "frontend": "internal/server/web (由 Go 后端内嵌提供, http://127.0.0.1:5510)",
+    "backend": "go (cmd/LongCat-frontend serve)",
+    "shell": "desktop/src-tauri (Tauri v2)"
+  }
+}
