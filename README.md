@@ -1,5 +1,9 @@
 # LongCat-frontend
 
+<p align="center">
+  <img src="longcat-color.svg" alt="LongCat-frontend" width="140">
+</p>
+
 轻量级、以体验为先的前端开发 Agent。只做前端，不做通用编码：专注 React / Next.js（App Router）、Vue 3、Svelte、Tailwind 以及设计系统与组件生成、无障碍、性能优化。
 
 ## 特性
@@ -9,6 +13,10 @@
 - **前端技能系统**：`frontend-skills/` 下按目录组织的前端专属技能（React 组件、Next.js App Router、Vue 3 组件、Tailwind 样式、无障碍等），按关键词自动匹配。
 - **Web UI**：内嵌单文件界面，grok 风深色主题 + LongCat 品牌图标，支持中英文（zh-CN / en-US）切换与本地持久化。
 - **轻量**：Go 标准库实现，构建产物 < 10 MB，无后台常驻进程。
+
+## 界面预览
+
+![LongCat-frontend 桌面端界面](pic1.png)
 
 ## 目录结构
 
@@ -80,6 +88,4 @@ cargo build
 
 `openai_chat` · `openai_responses` · `anthropic_messages` · `ollama_chat`
 
-## 许可证
 
-详见仓库许可证文件（如有）。

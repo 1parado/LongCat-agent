@@ -199,10 +199,15 @@ func (a *api) useProvider(w http.ResponseWriter, r *http.Request) {
 func (a *api) chat(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Message string `json:"message"`
+		Mode    string `json:"mode,omitempty"` // 可选：前端模式 react|nextjs|vue|tailwind|svelte
 	}
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil || strings.TrimSpace(in.Message) == "" {
 		writeErr(w, 400, fmt.Errorf("message 不能为空"))
 		return
+	}
+	// 设置模式（空则保持当前模式；非法模式忽略）
+	if in.Mode != "" {
+		_ = a.session.SetMode(in.Mode)
 	}
 	flusher, ok := w.(http.Flusher)
 	if !ok {

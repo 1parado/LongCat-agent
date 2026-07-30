@@ -161,6 +161,21 @@ body{font-family:var(--font-sans);font-size:var(--text-sm);color:var(--text-prim
 .msg-body pre{background:var(--bg-code);border:1px solid var(--border-subtle);border-radius:var(--radius-md);
   padding:12px 14px;overflow-x:auto;font-family:var(--font-mono);font-size:var(--text-xs);
   white-space:pre;margin:10px 0;line-height:1.6;color:var(--text-secondary)}
+/* Code block with header (lang + copy) */
+.code-block{margin:10px 0;border:1px solid var(--border-subtle);border-radius:var(--radius-md);
+  overflow:hidden;background:var(--bg-code)}
+.code-head{display:flex;justify-content:space-between;align-items:center;
+  padding:5px 12px;background:var(--bg-elevated);border-bottom:1px solid var(--border-subtle)}
+.code-lang{color:var(--accent);font-family:var(--font-mono);font-size:10.5px;font-weight:500}
+.code-copy{border:none;background:none;color:var(--text-tertiary);cursor:pointer;
+  font-size:10.5px;font-family:inherit;padding:2px 7px;border-radius:var(--radius-sm);
+  transition:all var(--motion-fast)}
+.code-copy:hover{color:var(--text-primary);background:var(--bg-hover)}
+.code-block pre{margin:0;border:none;border-radius:0}
+/* Streaming cursor */
+.stream-cursor{display:inline-block;width:7px;height:15px;background:var(--accent);
+  vertical-align:text-bottom;margin-left:2px;border-radius:1px;animation:blink 1s steps(2) infinite}
+@keyframes blink{50%{opacity:0}}
 .skill-tags{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:6px}
 .st-tag{font-size:10.5px;color:var(--longcat);border:1px solid color-mix(in srgb,var(--longcat) 30%,transparent);
   border-radius:var(--radius-full);padding:1px 8px;background:color-mix(in srgb,var(--longcat) 7%,transparent)}
@@ -303,7 +318,7 @@ body{font-family:var(--font-sans);font-size:var(--text-sm);color:var(--text-prim
     <span class="status-dot" id="connDot"></span>
     <span id="connText" data-i18n="connected">已连接</span>
     <span style="flex:1"></span>
-    <span>v0.3</span>
+    <span>v0.2.0</span>
   </div>
 </aside>
 
@@ -416,7 +431,7 @@ const I18N={
   addProvider:'添加供应商',editProvider:'编辑供应商',
   lblID:'标识符',lblProtocol:'通信协议',lblURL:'Base URL',
   lblKey:'API Key（编辑时留空保留原值）',lblModel:'模型名称',lblPriority:'优先级（小者优先）',
-  clearBtn:'清空',saveBtn:'保存',
+  clearBtn:'清空',saveBtn:'保存',copyBtn:'复制',copiedBtn:'已复制',
   msgYou:'你',msgAgent:'LongCat',
   thinking:'思考中…',sessionReset:'会话已重置',
   noProviders:'暂无供应商，点 ⚙ 添加',
@@ -441,7 +456,7 @@ const I18N={
   addProvider:'Add Provider',editProvider:'Edit Provider',
   lblID:'Identifier',lblProtocol:'Protocol',lblURL:'Base URL',
   lblKey:'API Key (leave empty to keep)',lblModel:'Model Name',lblPriority:'Priority (lower first)',
-  clearBtn:'Clear',saveBtn:'Save',
+  clearBtn:'Clear',saveBtn:'Save',copyBtn:'Copy',copiedBtn:'Copied',
   msgYou:'You',msgAgent:'LongCat',
   thinking:'Thinking…',sessionReset:'Session reset',
   noProviders:'No providers. Click ⚙ to add.',
@@ -578,9 +593,19 @@ function renderMd(el,text){
   const parts=text.split('```');let html='';
   parts.forEach((p,i)=>{
     if(i%2===1){const nl=p.indexOf('\n');
-      html+='<pre>'+esc(nl>=0?p.slice(nl+1):p)+'</pre>';}
+      const lang=nl>=0?p.slice(0,nl).trim():'';
+      const code=nl>=0?p.slice(nl+1):p;
+      const copyTxt=t('copyBtn');
+      html+=`<div class="code-block"><div class="code-head"><span class="code-lang">${esc(lang)}</span><button class="code-copy" onclick="copyCode(this)">${esc(copyTxt)}</button></div><pre>${esc(code)}</pre></div>`;}
     else html+=esc(p);
   });el.innerHTML=html;
+}
+function copyCode(btn){
+  const code=btn.closest('.code-block').querySelector('pre').textContent;
+  navigator.clipboard.writeText(code).then(()=>{
+    btn.textContent=t('copiedBtn');
+    setTimeout(()=>btn.textContent=t('copyBtn'),1500);
+  });
 }
 async function send(){
   const input=$('input');const text=input.value.trim();
@@ -604,12 +629,15 @@ async function send(){
         const dl=chunk.split('\n').find(l=>l.startsWith('data: '));
         if(!ev||!dl)continue;
         const data=JSON.parse(dl.slice(6));
-        if(ev==='delta'){acc+=data;renderMd(body,acc);scrollBottom();}
+        if(ev==='delta'){acc+=data;renderMd(body,acc);
+          const sc=document.createElement('span');sc.className='stream-cursor';body.appendChild(sc);
+          scrollBottom();}
         else if(ev==='skills'){a.querySelector('.skill-tags').innerHTML=
           data.map(n=>`<span class="st-tag">◆ ${esc(n)}</span>`).join('');}
         else if(ev==='error'){body.innerHTML=`<span style="color:var(--danger)">${t('errorPrefix')}${esc(data)}</span>`;}
       }
     }
+    renderMd(body,acc);
     updatePreview(acc);
   }catch(e){
     body.innerHTML=`<span style="color:var(--danger)">${t('errorPrefix')}${esc(String(e))}</span>`;

@@ -234,6 +234,19 @@ func (m *Manager) SetActive(id string) error {
 	return m.save()
 }
 
+// SetModel 更新指定供应商的模型名并持久化。
+func (m *Manager) SetModel(id, model string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	p, ok := m.providers[id]
+	if !ok {
+		return fmt.Errorf("供应商 %q 不存在", id)
+	}
+	p.Model = model
+	m.providers[id] = p
+	return m.save()
+}
+
 // Active 返回当前供应商；未设置时按优先级自动路由到第一个。
 func (m *Manager) Active() (Provider, error) {
 	m.mu.RLock()

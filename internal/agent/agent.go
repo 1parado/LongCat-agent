@@ -31,6 +31,27 @@ type Session struct {
 	Manager  *llm.Manager
 	Skills   []frontend.Skill
 	Messages []llm.Message
+	// Mode 当前前端模式（react/nextjs/vue/tailwind/svelte），空表示自动。
+	// 由 /mode 命令或 Web UI 的模式选择设置，注入到系统提示。
+	Mode string
+}
+
+// modeDesc 模式到提示词片段的映射。
+var modeDesc = map[string]string{
+	"react":    "React（函数组件 + Hooks）",
+	"nextjs":   "Next.js（App Router、Server Components、Server Actions）",
+	"vue":      "Vue 3（组合式 API + <script setup>）",
+	"tailwind": "Tailwind CSS 优先的样式方案",
+	"svelte":   "Svelte / SvelteKit",
+}
+
+// SetMode 切换前端模式；非法模式返回错误。
+func (s *Session) SetMode(m string) error {
+	if _, ok := modeDesc[m]; !ok {
+		return fmt.Errorf("未知模式 %q，可选: react|nextjs|vue|tailwind|svelte", m)
+	}
+	s.Mode = m
+	return nil
 }
 
 // NewSession 创建会话并加载 skillsDir 下的技能。
@@ -42,10 +63,15 @@ func NewSession(m *llm.Manager, skillsDir string) (*Session, error) {
 	return &Session{Manager: m, Skills: skills}, nil
 }
 
-// buildSystem 组装系统提示：基础提示 + 命中的技能正文。
+// buildSystem 组装系统提示：基础提示 + 当前模式 + 命中的技能正文。
 func (s *Session) buildSystem(userInput string) string {
 	var b strings.Builder
 	b.WriteString(systemPrompt)
+	if s.Mode != "" {
+		b.WriteString("\n\n## 当前模式\n本轮优先采用 ")
+		b.WriteString(modeDesc[s.Mode])
+		b.WriteString("。")
+	}
 	matched := frontend.Match(s.Skills, userInput, 3)
 	if len(matched) > 0 {
 		b.WriteString("\n\n## 已激活技能\n")
