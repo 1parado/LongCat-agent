@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title data-i18n="appTitle">LongCat-frontend</title>
+<title data-i18n="appTitle">LongCat</title>
 <link rel="icon" type="image/svg+xml" href='data:image/svg+xml,%3Csvg%20viewBox%3D%220%200%2024%2024%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cpath%20clip-rule%3D%22evenodd%22%20d%3D%22M.507%2019.883a.507.507%200%2001-.489-.642L4.29%203.745a1.013%201.013%200%20011.533-.578l5.622%203.687a1.013%201.013%200%20001.11%200L18.2%203.165a1.013%201.013%200%20011.532.58l4.25%2015.497a.506.506%200%2001-.49.64H18.07a6.297%206.297%200%20001.53-4.115v-.177a6.09%206.09%200%2000-1.513-4.017l-.697-3.495a.438.438%200%2000-.694-.266L14.07%209.781a.748.748%200%2001-.654.121%205.156%205.156%200%2000-2.833%200%20.746.746%200%2001-.653-.121L7.302%207.81a.435.435%200%2000-.688.269l-.675%203.652a5.36%205.36%200%2000-1.539%203.76v.333c0%201.474.527%202.9%201.488%204.02l.032.038H.507z%22%20fill%3D%22%2329E154%22%20fill-rule%3D%22evenodd%22%2F%3E%3C%2Fsvg%3E'>
 <style>
 /* ============================================================
@@ -76,7 +76,14 @@ body{font-family:var(--font-sans);font-size:var(--text-sm);color:var(--text-prim
 /* ---- Sidebar ---- */
 .sidebar{width:var(--sidebar-width);min-width:var(--sidebar-width);background:var(--bg-sidebar);
   display:flex;flex-direction:column;user-select:none;
-  box-shadow:inset -1px 0 0 var(--border-subtle)}
+  box-shadow:inset -1px 0 0 var(--border-subtle);
+  transition:width var(--motion-normal),min-width var(--motion-normal),flex var(--motion-normal);
+  overflow:hidden;flex-shrink:0}
+.sidebar.collapsed{width:0;min-width:0;flex:0;padding:0;box-shadow:none}
+.sidebar-toggle{width:24px;height:24px;border:none;background:none;border-radius:var(--radius-sm);
+  color:var(--text-secondary);cursor:pointer;display:flex;align-items:center;justify-content:center;
+  font-size:11px;transition:background var(--motion-fast),color var(--motion-fast);flex-shrink:0}
+.sidebar-toggle:hover{background:var(--bg-hover);color:var(--text-primary)}
 .sb-top{height:var(--titlebar-height);display:flex;align-items:center;gap:8px;padding:0 14px;flex-shrink:0}
 .sb-logo{display:flex;align-items:center;gap:8px;font-weight:600;font-size:var(--text-md);letter-spacing:-.01em}
 .sb-logo svg{width:20px;height:20px;flex-shrink:0}
@@ -213,11 +220,22 @@ body{font-family:var(--font-sans);font-size:var(--text-sm);color:var(--text-prim
 
 /* ---- Preview pane ---- */
 .preview-pane{width:42%;min-width:340px;background:var(--bg-sidebar);display:none;flex-direction:column;
-  box-shadow:inset 1px 0 0 var(--border-subtle)}
+  box-shadow:inset 1px 0 0 var(--border-subtle);
+  transition:width var(--motion-normal),min-width var(--motion-normal),flex var(--motion-normal);
+  overflow:hidden;flex-shrink:0;position:relative}
 .preview-pane.open{display:flex}
+.preview-pane.fullscreen{position:fixed;top:0;left:0;right:0;bottom:0;width:100%!important;
+  min-width:100%!important;max-width:100%!important;z-index:1000;
+  box-shadow:0 0 0 1px var(--border-subtle)}
 .pp-head{height:var(--titlebar-height);display:flex;align-items:center;justify-content:space-between;
   padding:0 14px;font-size:var(--text-xs);color:var(--text-secondary);flex-shrink:0}
 .pp-frame{flex:1;border:0;background:#fff;border-radius:var(--radius-md);margin:0 10px 10px}
+
+/* ---- Resize handle ---- */
+.resize-handle{width:5px;cursor:col-resize;flex-shrink:0;background:transparent;
+  transition:background var(--motion-fast);position:relative;z-index:1}
+.resize-handle:hover,.resize-handle.active{background:var(--accent);opacity:.6}
+.preview-pane.fullscreen + .resize-handle{display:none!important}
 
 /* ---- Glass Modal（玻璃拟态浮层） ---- */
 .overlay{position:fixed;inset:0;background:var(--bg-overlay);display:none;
@@ -274,6 +292,58 @@ body{font-family:var(--font-sans);font-size:var(--text-sm);color:var(--text-prim
   transition:all var(--motion-normal);z-index:200}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 
+/* ---- Skills Pane ---- */
+.skills-pane{flex:1;display:none;flex-direction:column;padding:0 32px;overflow:hidden}
+.skills-pane.open{display:flex}
+.sp-head{display:flex;align-items:center;gap:12px;padding:14px 0;flex-shrink:0}
+.sp-head h2{font-size:var(--text-lg);font-weight:600;flex-shrink:0}
+.sp-add{flex:1;display:flex;gap:8px}
+.sp-add input{flex:1;background:var(--bg-input);border:1px solid var(--border-subtle);
+  border-radius:var(--radius-md);padding:7px 10px;font-size:var(--text-xs);color:var(--text-primary);outline:none;transition:border var(--motion-fast)}
+.sp-add input:focus{border-color:var(--border-focus)}
+.sp-body{flex:1;overflow-y:auto;padding-bottom:20px}
+.repo-card{background:var(--bg-elevated);border:1px solid var(--border-subtle);border-radius:var(--radius-md);
+  padding:14px 16px;margin-bottom:10px;cursor:pointer;transition:all var(--motion-fast)}
+.repo-card:hover{border-color:var(--border-strong);background:var(--bg-hover)}
+.repo-card-head{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+.repo-card-title{font-weight:600;font-size:var(--text-md)}
+.repo-card-stars{color:var(--warning);font-size:var(--text-xs)}
+.repo-card-desc{color:var(--text-secondary);font-size:var(--text-xs);line-height:1.5}
+.repo-card-url{color:var(--text-tertiary);font-size:11px;margin-top:4px;font-family:var(--font-mono)}
+.skills-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;margin-top:12px}
+.skill-card{background:var(--bg-elevated);border:1px solid var(--border-subtle);border-radius:var(--radius-md);
+  padding:14px;display:flex;flex-direction:column;gap:6px;transition:all var(--motion-fast)}
+.skill-card:hover{border-color:var(--border-strong)}
+.skill-card.active{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent-muted) inset}
+.skill-card-title{font-weight:600;font-size:var(--text-sm);display:flex;align-items:center;justify-content:space-between;gap:8px}
+.skill-card-desc{color:var(--text-secondary);font-size:var(--text-xs);line-height:1.5;flex:1}
+.skill-card-actions{display:flex;gap:6px;margin-top:4px}
+.sp-back{margin-bottom:12px}
+
+/* Skills Popup */
+.skills-popup{position:fixed;top:0;left:0;right:0;bottom:0;z-index:2000;display:flex;align-items:center;justify-content:center}
+.skills-popup-overlay{position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);backdrop-filter:blur(4px)}
+.skills-popup-content{position:relative;background:var(--bg-primary);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);
+  box-shadow:0 10px 40px rgba(0,0,0,0.3);width:90%;max-width:600px;max-height:80vh;display:flex;flex-direction:column}
+.skills-popup-header{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;
+  border-bottom:1px solid var(--border-subtle)}
+.skills-popup-header h3{font-size:var(--text-lg);font-weight:600;margin:0}
+.skills-popup-close{background:transparent;border:0;color:var(--text-secondary);font-size:20px;
+  cursor:pointer;padding:4px 8px;border-radius:var(--radius-sm);transition:all var(--motion-fast)}
+.skills-popup-close:hover{background:var(--bg-hover);color:var(--text-primary)}
+.skills-popup-body{flex:1;overflow-y:auto;padding:16px 20px}
+.skill-item{display:flex;align-items:center;justify-content:space-between;padding:12px;
+  background:var(--bg-elevated);border:1px solid var(--border-subtle);border-radius:var(--radius-md);
+  margin-bottom:8px;transition:all var(--motion-fast)}
+.skill-item:hover{border-color:var(--border-strong);background:var(--bg-hover)}
+.skill-info{flex:1;min-width:0}
+.skill-name{font-weight:600;font-size:var(--text-sm);margin-bottom:4px}
+.skill-desc{color:var(--text-secondary);font-size:var(--text-xs);line-height:1.4;
+  overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.skill-use-btn{background:var(--accent);color:#fff;border:0;padding:6px 16px;border-radius:var(--radius-md);
+  font-size:var(--text-xs);font-weight:500;cursor:pointer;transition:all var(--motion-fast);white-space:nowrap}
+.skill-use-btn:hover{background:var(--accent-hover);transform:translateY(-1px)}
+
 /* Scrollbar — overlay style */
 ::-webkit-scrollbar{width:8px;height:8px}
 ::-webkit-scrollbar-thumb{background:transparent;border-radius:var(--radius-full)}
@@ -294,8 +364,9 @@ body{font-family:var(--font-sans);font-size:var(--text-sm);color:var(--text-prim
 <div class="app">
 
 <!-- ========== Sidebar ========== -->
-<aside class="sidebar">
+<aside class="sidebar" id="leftSidebar">
   <div class="sb-top">
+    <button class="sidebar-toggle" id="btnSidebarToggle" title="切换侧栏">◧</button>
     <div class="sb-logo">
       <svg><use href="#longcat"/></svg>
       <span data-i18n="appName">LongCat-frontend</span>
@@ -309,9 +380,19 @@ body{font-family:var(--font-sans);font-size:var(--text-sm);color:var(--text-prim
   </div>
   <div class="sb-body">
     <nav class="sb-nav" id="sbNav"></nav>
+    <div class="sb-title">工作空间</div>
+    <div style="padding:0 10px;margin-bottom:16px">
+      <input type="text" id="workspaceInput" placeholder="选择工作空间路径"
+        style="width:100%;padding:6px 10px;border:1px solid var(--border-subtle);border-radius:var(--radius-md);
+        background:var(--bg-input);color:var(--text-primary);font-size:var(--text-xs);outline:none;transition:border var(--motion-fast)">
+      <button id="btnSetWorkspace"
+        style="width:100%;margin-top:6px;padding:6px;background:var(--accent);color:#fff;border:0;border-radius:var(--radius-md);
+        font-size:var(--text-xs);font-weight:500;cursor:pointer;transition:all var(--motion-fast)">设置工作空间</button>
+      <div id="currentWorkspace" style="margin-top:6px;font-size:10.5px;color:var(--text-tertiary);word-break:break-all"></div>
+    </div>
     <div class="sb-title" data-i18n="providersTitle">供应商</div>
     <div id="providerList"></div>
-    <div class="sb-title" data-i18n="skillsTitle">前端技能</div>
+    <div class="sb-title" data-i18n="skillsTitle">技能</div>
     <div id="skillList"></div>
   </div>
   <div class="sb-footer">
@@ -321,13 +402,16 @@ body{font-family:var(--font-sans);font-size:var(--text-sm);color:var(--text-prim
     <span>v0.2.0</span>
   </div>
 </aside>
+<div class="resize-handle" id="leftResize"></div>
 
 <!-- ========== Main ========== -->
 <div class="main">
   <div class="titlebar">
+    <button class="icon-btn" id="btnSidebarToggleMain" title="切换侧栏" style="display:none">◧</button>
+    <div style="flex:1"></div>
     <button class="icon-btn" id="btnTheme" data-i18n-title="toggleTheme" title="切换主题">◐</button>
     <button class="icon-btn" id="btnPreviewToggle" data-i18n-title="preview" title="预览">▤</button>
-    <button class="icon-btn" id="btnSettings" data-i18n-title="settings" title="设置">⚙</button>
+    <button class="icon-btn" id="btnSkillsView" title="Skills 市场">◆</button>
   </div>
 
   <div class="chat-area" id="chatArea">
@@ -338,6 +422,19 @@ body{font-family:var(--font-sans);font-size:var(--text-sm);color:var(--text-prim
     </div>
     <!-- Messages -->
     <div class="msg-list" id="msgList" style="display:none"></div>
+  </div>
+
+  <!-- Skills Pane -->
+  <div class="skills-pane" id="skillsPane">
+    <div class="sp-head">
+      <h2>Skills 市场</h2>
+      <div class="sp-add">
+        <input id="skillRepoInput" placeholder="owner/repo 或 https://github.com/owner/repo">
+        <button class="btn btn-primary" id="btnAddRepo">添加仓库</button>
+      </div>
+      <button class="icon-btn" onclick="closeSkillsPane()" title="关闭">✕</button>
+    </div>
+    <div class="sp-body" id="skillsBody"></div>
   </div>
 
   <!-- Composer -->
@@ -360,13 +457,17 @@ body{font-family:var(--font-sans);font-size:var(--text-sm);color:var(--text-prim
 </div>
 
 <!-- ========== Preview ========== -->
-<div class="preview-pane" id="previewPane">
+<div class="preview-pane" id="rightPreview">
   <div class="pp-head">
     <span data-i18n="previewTitle">实时预览</span>
-    <button class="icon-btn" onclick="togglePreview()">✕</button>
+    <div style="display:flex;gap:2px">
+      <button class="icon-btn" id="btnPreviewFullscreen" title="全屏切换">⛶</button>
+      <button class="icon-btn" onclick="togglePreview()">✕</button>
+    </div>
   </div>
   <iframe class="pp-frame" id="previewFrame" sandbox="allow-scripts"></iframe>
 </div>
+<div class="resize-handle" id="rightResize"></div>
 
 </div><!-- /app -->
 
@@ -415,17 +516,17 @@ body{font-family:var(--font-sans);font-size:var(--text-sm);color:var(--text-prim
 // ============================================================
 const I18N={
  'zh-CN':{
-  appName:'LongCat-frontend',appTitle:'LongCat-frontend',
+  appName:'LongCat',appTitle:'LongCat — 智能通用 AI 助手',
   searchPlaceholder:'搜索…',
   navChat:'对话',navSkills:'技能',navProviders:'供应商',
-  providersTitle:'供应商',skillsTitle:'前端技能',
+  providersTitle:'供应商',skillsTitle:'技能',
   connected:'已连接',disconnected:'未连接',
-  welcomeTitle:'今天想构建什么？',
-  inputPlaceholder:'描述你想要的组件、页面或前端问题…',
+  welcomeTitle:'今天想做什么？',
+  inputPlaceholder:'描述你的问题、需求或想法…',
   inputHint:'Enter 发送 · Shift+Enter 换行',
   resetChip:'↺ 重置',
-  toggleTheme:'切换主题',preview:'预览',settings:'设置',
-  previewTitle:'实时预览',
+toggleTheme:'切换主题',preview:'预览',settings:'设置',
+   previewTitle:'实时预览',
   providerModalTitle:'LLM 供应商管理',
   thID:'标识',thProtocol:'协议',thModel:'模型',thKey:'密钥',thActions:'操作',
   addProvider:'添加供应商',editProvider:'编辑供应商',
@@ -440,17 +541,17 @@ const I18N={
   errorPrefix:'✖ ',
  },
  'en-US':{
-  appName:'LongCat-frontend',appTitle:'LongCat-frontend',
+  appName:'LongCat',appTitle:'LongCat — Intelligent AI Assistant',
   searchPlaceholder:'Search…',
   navChat:'Chat',navSkills:'Skills',navProviders:'Providers',
-  providersTitle:'Providers',skillsTitle:'Frontend Skills',
+  providersTitle:'Providers',skillsTitle:'Skills',
   connected:'Connected',disconnected:'Disconnected',
-  welcomeTitle:'What should we build today?',
-  inputPlaceholder:'Describe the component, page or question…',
+  welcomeTitle:'What can I help you with today?',
+  inputPlaceholder:'Describe your problem, requirement or idea…',
   inputHint:'Enter to send · Shift+Enter for newline',
   resetChip:'↺ Reset',
-  toggleTheme:'Toggle theme',preview:'Preview',settings:'Settings',
-  previewTitle:'Live Preview',
+toggleTheme:'Toggle theme',preview:'Preview',settings:'Settings',
+   previewTitle:'Live Preview',
   providerModalTitle:'LLM Provider Management',
   thID:'ID',thProtocol:'Protocol',thModel:'Model',thKey:'Key',thActions:'Actions',
   addProvider:'Add Provider',editProvider:'Edit Provider',
@@ -485,6 +586,8 @@ function toggleLang(){curLang=curLang==='zh-CN'?'en-US':'zh-CN';localStorage.set
 const $=id=>document.getElementById(id);
 let state={providers:[],skills:[],protocols:[]};
 let editing=null,busy=false,previewOn=false;
+let sidebarCollapsed=false,previewCollapsed=false;
+let isFullscreen=false;
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function toast(m){const el=$('toast');el.textContent=m;el.classList.add('show');
   setTimeout(()=>el.classList.remove('show'),2000);}
@@ -496,7 +599,7 @@ const catAvatar='<svg><use href="#longcat"/></svg>';
 function renderNav(){
   $('sbNav').innerHTML=[
     {icon:'◈',key:'navChat',active:true},
-    {icon:'◆',key:'navSkills',onclick:"document.getElementById('skillList').scrollIntoView({behavior:'smooth'})"},
+    {icon:'◆',key:'navSkills',onclick:'openSkillsPane()'},
     {icon:'⚙',key:'navProviders',onclick:'openModal()'}
   ].map(n=>`<button class="nav-item${n.active?' active':''}" ${n.onclick?`onclick="${n.onclick}"`:''}>
     <span class="ni">${n.icon}</span>${t(n.key)}</button>`).join('');
@@ -536,6 +639,9 @@ async function refresh(){
     act?`<span class="ctx-chip">☁ ${esc(act.id)}</span>`:'',
     `<span class="ctx-chip">◆ ${state.skills.length} skills</span>`
   ].join('');
+
+  // 加载工作空间
+  loadWorkspace();
 }
 
 // ============================================================
@@ -610,6 +716,14 @@ function copyCode(btn){
 async function send(){
   const input=$('input');const text=input.value.trim();
   if(!text||busy)return;
+
+  // 检测 /skills 命令
+  if(text==='/skills'){
+    input.value='';
+    showInstalledSkillsPopup();
+    return;
+  }
+
   busy=true;$('btnSend').disabled=true;input.value='';autoGrow();
   const u=addMsg('user');u.querySelector('.msg-body').textContent=text;
   const a=addMsg('assistant');
@@ -649,10 +763,6 @@ function scrollBottom(){const c=$('chatArea');c.scrollTop=c.scrollHeight;}
 // ============================================================
 // Preview
 // ============================================================
-function togglePreview(){
-  previewOn=!previewOn;
-  $('previewPane').classList.toggle('open',previewOn);
-}
 function updatePreview(text){
   if(!previewOn)return;
   const m=[...text.matchAll(/```(?:html)?\n([\s\S]*?)```/g)];
@@ -672,9 +782,17 @@ $('btnTheme').onclick=()=>{
   localStorage.setItem('theme',d.dataset.theme);
 };
 $('btnLang').onclick=toggleLang;
-$('btnSettings').onclick=openModal;
+$('btnSkillsView').onclick=openSkillsPane;
+$('btnAddRepo').onclick=async()=>{
+  const inp=$('skillRepoInput');const url=inp.value.trim();
+  if(!url)return;
+  toast('拉取中…（首次需调 GitHub API）');
+  const r=await fetch('/api/skills/repo/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url})});
+  const j=await r.json();
+  if(j.error){toast(t('errorPrefix')+j.error);return;}
+  inp.value='';toast('已添加');loadSkillsView();
+};
 $('btnSend').onclick=send;
-$('btnPreviewToggle').onclick=togglePreview;
 $('btnResetForm').onclick=resetForm;
 $('btnSave').onclick=saveProvider;
 $('overlay').onclick=e=>{if(e.target===$('overlay'))closeModal();};
@@ -685,15 +803,336 @@ $('chipReset').onclick=async()=>{
 };
 const inputEl=$('input');
 function autoGrow(){inputEl.style.height='auto';inputEl.style.height=Math.min(inputEl.scrollHeight,160)+'px';}
-inputEl.addEventListener('input',autoGrow);
+inputEl.addEventListener('input',()=>{
+  autoGrow();
+  // 检测 /skills 命令，实时显示弹窗
+  const val=inputEl.value.trim();
+  if(val==='/skills'){
+    showInstalledSkillsPopup();
+    inputEl.value=''; // 清空输入框
+  }
+});
 inputEl.addEventListener('keydown',e=>{
   if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send();}
 });
-document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal();});
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape' && isFullscreen){
+    togglePreviewFullscreen();
+  }else if(e.key==='Escape'){
+    closeModal();
+  }
+});
+
+// ============================================================
+// Skills 市场
+// ============================================================
+let skillsViewRepo=null;
+function openSkillsPane(){
+  $('skillsPane').classList.add('open');
+  $('chatArea').style.display='none';
+  document.querySelector('.composer-wrap').style.display='none';
+  skillsViewRepo=null;loadSkillsView();
+}
+function closeSkillsPane(){
+  $('skillsPane').classList.remove('open');
+  $('chatArea').style.display='';
+  document.querySelector('.composer-wrap').style.display='';
+}
+async function loadSkillsView(){
+  const body=$('skillsBody');
+  body.innerHTML='<div style="color:var(--text-tertiary);padding:20px">加载中…</div>';
+  try{
+    const r=await fetch('/api/skills/state');const s=await r.json();
+    if(skillsViewRepo){await browseRepo(skillsViewRepo);return;}
+    renderRepos(s);
+  }catch(e){body.innerHTML='<div style="color:var(--danger)">加载失败</div>';}
+}
+function renderRepos(s){
+  const body=$('skillsBody');
+  if(!s.repos||s.repos.length===0){
+    body.innerHTML=`<div style="color:var(--text-tertiary);padding:40px 0;text-align:center">
+      <p>暂无收藏的仓库</p><p style="font-size:12px;margin-top:8px">在上方输入 <code>owner/repo</code> 或 GitHub URL 添加</p></div>`;
+    return;
+  }
+  body.innerHTML=s.repos.map(r=>`
+    <div class="repo-card" onclick="browseRepo('${esc(r.url)}')">
+      <div class="repo-card-head">
+        <span class="repo-card-title">${esc(r.owner)}/${esc(r.name)}</span>
+        <span class="repo-card-stars">★ ${r.stars}</span>
+      </div>
+      <div class="repo-card-desc">${esc(r.description||'（无描述）')}</div>
+      <div class="repo-card-url">${esc(r.url)}</div>
+    </div>`).join('');
+}
+async function browseRepo(url){
+  skillsViewRepo=url;
+  const body=$('skillsBody');
+  body.innerHTML='<div style="color:var(--text-tertiary);padding:20px">拉取中…（首次访问仓库需调 GitHub API）</div>';
+  try{
+    const r=await fetch('/api/skills/browse',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url})});
+    const j=await r.json();
+    if(j.error){body.innerHTML=`<div style="color:var(--danger)">${esc(j.error)}</div>`;return;}
+    const s=await (await fetch('/api/skills/state')).json();
+    renderSkillsGrid(url,s,j.repo,j.skills);
+  }catch(e){body.innerHTML='<div style="color:var(--danger)">拉取失败</div>';}
+}
+function renderSkillsGrid(url,s,repo,skills){
+  const body=$('skillsBody');
+  const installed=new Set(s.installed||[]);
+  let html=`<button class="btn sp-back" onclick="skillsViewRepo=null;loadSkillsView()">← 返回仓库列表</button>`;
+  if(repo){
+    html+=`<div class="repo-card-head" style="margin-bottom:10px">
+      <span class="repo-card-title">${esc(repo.owner)}/${esc(repo.name)}</span>
+      <span class="repo-card-stars">★ ${repo.stars}</span>
+      <span style="color:var(--text-tertiary);font-size:11px">${esc(repo.description||'')}</span></div>`;
+  }
+  if(!skills||skills.length===0){
+    body.innerHTML=html+'<div style="color:var(--text-tertiary);padding:20px">仓库内未找到 skills/&lt;name&gt;/SKILL.md</div>';return;
+  }
+  html+='<div class="skills-grid">';
+  for(const sk of skills){
+    const isInst=installed.has(sk.name),isActive=s.active===sk.name;
+    html+=`<div class="skill-card${isActive?' active':''}">
+      <div class="skill-card-title">${esc(sk.title||sk.name)}
+        ${isActive?'<span style="color:var(--accent);font-size:11px">● 已激活</span>':''}
+        ${isInst&&!isActive?'<span style="color:var(--success);font-size:11px">✓ 已安装</span>':''}
+      </div>
+      <div class="skill-card-desc">${esc(sk.description||'（无描述）')}</div>
+      <div class="skill-card-actions">
+        ${isInst?
+          `<button class="chip-btn" onclick="useSkill('${esc(sk.name)}')">激活</button>
+           <button class="chip-btn" onclick="uninstallSkill('${esc(sk.name)}')">卸载</button>`:
+          `<button class="chip-btn" style="background:var(--accent);color:var(--accent-fg)" onclick="installSkill('${esc(url)}','${esc(sk.name)}')">安装</button>`}
+      </div></div>`;
+  }
+  html+='</div>';
+  body.innerHTML=html;
+}
+async function installSkill(url,name){
+  toast('安装中…');
+  const r=await fetch('/api/skills/install',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url,name})});
+  const j=await r.json();
+  if(j.error){toast(t('errorPrefix')+j.error);return;}
+  toast('已安装 '+name);loadSkillsView();
+}
+async function uninstallSkill(name){
+  if(!confirm('卸载 '+name+'？'))return;
+  await fetch('/api/skills/uninstall',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})});
+  toast('已卸载');loadSkillsView();
+}
+async function useSkill(name){
+  await fetch('/api/skills/use',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})});
+  toast('已激活 '+name+'（下次对话生效）');loadSkillsView();
+}
+
+// ============================================================
+// Installed Skills Popup
+// ============================================================
+async function showInstalledSkillsPopup(){
+  try{
+    const r=await fetch('/api/skills/state');
+    const s=await r.json();
+    const installed=s.installed||[];
+    if(installed.length===0){
+      toast('暂无已安装的技能');
+      return;
+    }
+    // 创建弹窗
+    const popup=document.createElement('div');
+    popup.className='skills-popup';
+    popup.innerHTML=`
+      <div class="skills-popup-overlay"></div>
+      <div class="skills-popup-content">
+        <div class="skills-popup-header">
+          <h3>已安装的技能</h3>
+          <button class="skills-popup-close">✕</button>
+        </div>
+        <div class="skills-popup-body">
+          ${installed.map(skillName=>`
+            <div class="skill-item" data-skill="${esc(skillName)}">
+              <div class="skill-info">
+                <div class="skill-name">${esc(skillName)}</div>
+              </div>
+              <button class="skill-use-btn">使用</button>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+    document.body.appendChild(popup);
+    // 关闭弹窗
+    const closePopup=()=>{popup.remove();};
+    popup.querySelector('.skills-popup-close').onclick=closePopup;
+    popup.querySelector('.skills-popup-overlay').onclick=closePopup;
+    // 使用技能
+    popup.querySelectorAll('.skill-use-btn').forEach(btn=>{
+      btn.onclick=()=>{
+        const item=btn.closest('.skill-item');
+        const skillName=item.dataset.skill;
+        const input=$('input');
+        input.value=`/${skillName} `;
+        input.focus();
+        closePopup();
+      };
+    });
+  }catch(e){
+    toast('加载技能列表失败');
+  }
+}
+
+// ============================================================
+// Workspace
+// ============================================================
+async function loadWorkspace(){
+  try{
+    const r=await fetch('/api/workspace');
+    const data=await r.json();
+    if(data.workspace){
+      $('workspaceInput').value=data.workspace;
+      $('currentWorkspace').textContent='当前: '+data.workspace;
+    }else{
+      $('currentWorkspace').textContent='未设置工作空间';
+    }
+  }catch(e){
+    $('currentWorkspace').textContent='加载失败';
+  }
+}
+
+async function setWorkspace(){
+  const workspace=$('workspaceInput').value.trim();
+  if(!workspace){
+    toast('请输入工作空间路径');
+    return;
+  }
+  try{
+    const r=await fetch('/api/workspace',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({workspace})
+    });
+    const data=await r.json();
+    if(data.error){
+      toast('设置失败: '+data.error);
+    }else{
+      toast('工作空间已设置');
+      loadWorkspace();
+    }
+  }catch(e){
+    toast('设置失败');
+  }
+}
+
+// ============================================================
+// Resize handles
+// ============================================================
+function initResize(handleId,panelId,side){
+  const handle=$(handleId);if(!handle)return;
+  let startX=0,startWidth=0;
+  const onStart=e=>{
+    e.preventDefault();
+    startX=e.clientX||e.touches[0].clientX;
+    const panel=$(panelId);
+    startWidth=panel.getBoundingClientRect().width;
+    handle.classList.add('active');
+    document.addEventListener('mousemove',onMove);
+    document.addEventListener('mouseup',onEnd);
+    document.addEventListener('touchmove',onMove);
+    document.addEventListener('touchend',onEnd);
+  };
+  const onMove=e=>{
+    const x=e.clientX||e.touches?.[0]?.clientX;
+    if(!x)return;
+    const dx=x-startX;
+    const panel=$(panelId);
+    if(side==='left'){
+      const newWidth=Math.max(0,Math.min(startWidth+dx,window.innerWidth*0.5));
+      panel.style.width=newWidth+'px';panel.style.minWidth=newWidth+'px';
+    }else{
+      const newWidth=Math.max(200,Math.min(startWidth-dx,window.innerWidth*0.7));
+      panel.style.width=newWidth+'px';panel.style.minWidth=newWidth+'px';
+    }
+  };
+  const onEnd=()=>{
+    handle.classList.remove('active');
+    document.removeEventListener('mousemove',onMove);
+    document.removeEventListener('mouseup',onEnd);
+    document.removeEventListener('touchmove',onMove);
+    document.removeEventListener('touchend',onEnd);
+    const panel=$(panelId);
+    localStorage.setItem(panelId,panel.getBoundingClientRect().width);
+  };
+  handle.addEventListener('mousedown',onStart);
+  handle.addEventListener('touchstart',onStart);
+}
+function toggleSidebar(){
+  sidebarCollapsed=!sidebarCollapsed;
+  const el=$('leftSidebar');
+  const mainToggle=$('btnSidebarToggleMain');
+  if(sidebarCollapsed){
+    el.style.width='0';el.style.minWidth='0';el.style.flex='0';
+    mainToggle.style.display='flex';
+  }else{
+    el.style.width='';el.style.minWidth='';el.style.flex='';
+    mainToggle.style.display='none';
+  }
+  $('leftResize').style.display=sidebarCollapsed?'none':'';
+  localStorage.setItem('leftSidebarCollapsed',sidebarCollapsed);
+}
+function togglePreview(){
+  previewOn=!previewOn;
+  const preview=$('rightPreview');
+  preview.classList.toggle('open',previewOn);
+  $('rightResize').style.display=previewOn?'':'none';
+  localStorage.setItem('previewOpen',previewOn);
+}
+function togglePreviewFullscreen(){
+  isFullscreen=!isFullscreen;
+  const preview=$('rightPreview');
+  preview.classList.toggle('fullscreen',isFullscreen);
+  if(!previewOn){
+    previewOn=true;
+    preview.classList.add('open');
+  }
+}
 
 // Init — 深色默认，记住用户选择
 const savedTheme=localStorage.getItem('theme');
 if(savedTheme)document.documentElement.dataset.theme=savedTheme;
+
+// Restore sidebar/preview state
+sidebarCollapsed=localStorage.getItem('leftSidebarCollapsed')==='true';
+const sbEl=$('leftSidebar');
+const mainToggle=$('btnSidebarToggleMain');
+if(sidebarCollapsed){
+  sbEl.style.width='0';sbEl.style.minWidth='0';sbEl.style.flex='0';
+  mainToggle.style.display='flex';
+}else{
+  mainToggle.style.display='none';
+}
+$('leftResize').style.display=sidebarCollapsed?'none':'';
+previewOn=localStorage.getItem('previewOpen')==='true';
+$('rightPreview').classList.toggle('open',previewOn);
+$('rightResize').style.display=previewOn?'':'none';
+
+applyI18n();refresh();
+
+// Restore panel widths
+['leftSidebar','rightPreview'].forEach(id=>{
+  const w=localStorage.getItem(id);
+  if(w){const el=$(id);if(el){el.style.width=w;el.style.minWidth=w;}}
+});
+
+// Init resize handles
+initResize('leftResize','leftSidebar','left');
+initResize('rightResize','rightPreview','right');
+
+// Wire toggle buttons
+$('btnSidebarToggle').onclick=toggleSidebar;
+$('btnSidebarToggleMain').onclick=toggleSidebar;
+$('btnPreviewToggle').onclick=togglePreview;
+$('btnPreviewFullscreen').onclick=togglePreviewFullscreen;
+$('btnSetWorkspace').onclick=setWorkspace;
+
 applyI18n();refresh();
 </script>
 </body>

@@ -25,6 +25,7 @@ import (
 
 	"LongCat-frontend/internal/agent"
 	"LongCat-frontend/internal/llm"
+	"LongCat-frontend/internal/skills"
 	"LongCat-frontend/internal/utils"
 
 	"github.com/mattn/go-isatty"
@@ -66,6 +67,7 @@ type TUI struct {
 	themeName string
 	pal       palette
 	editor    *Editor
+	market    *skills.Market
 }
 
 // New 创建 TUI。
@@ -226,7 +228,7 @@ func (t *TUI) command(input string) (quit bool) {
 	case "/help", "/h":
 		t.help()
 	case "/skills":
-		t.skills()
+		t.cmdSkills(args)
 	case "/providers", "/p":
 		t.providers()
 	case "/use":
@@ -366,7 +368,7 @@ func (t *TUI) help() {
 		{"/use <id>", "切换当前供应商"},
 		{"/model <name>", "切换当前供应商的模型"},
 		{"/remove <id>", "删除供应商"},
-		{"/skills", "查看已加载的前端技能"},
+		{"/skills", "技能管理（列表/安装/激活），/skills help 详见"},
 		{"/mode <fw>", "切换模式: react|nextjs|vue|tailwind|svelte"},
 		{"/theme [d|l]", "切换深色/浅色主题"},
 		{"/clear", "重置会话上下文"},

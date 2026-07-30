@@ -22,6 +22,7 @@ import (
 
 	"LongCat-frontend/internal/agent"
 	"LongCat-frontend/internal/llm"
+	"LongCat-frontend/internal/skills"
 )
 
 //go:embed web
@@ -30,12 +31,17 @@ var webFS embed.FS
 type api struct {
 	manager *llm.Manager
 	session *agent.Session
+	market  *skills.Market
 	mu      sync.Mutex // 串行化对话，轻量会话无需并发
 }
 
 // Run 阻塞式启动 HTTP 服务。
 func Run(addr string, m *llm.Manager, s *agent.Session) error {
-	a := &api{manager: m, session: s}
+	mkt, err := skills.NewMarket()
+	if err != nil {
+		return fmt.Errorf("初始化 skills 市场失败: %w", err)
+	}
+	a := &api{manager: m, session: s, market: mkt}
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /", a.index)
@@ -46,6 +52,15 @@ func Run(addr string, m *llm.Manager, s *agent.Session) error {
 	mux.HandleFunc("POST /api/providers/{id}/use", a.useProvider)
 	mux.HandleFunc("POST /api/chat", a.chat)
 	mux.HandleFunc("POST /api/reset", a.reset)
+	mux.HandleFunc("GET /api/skills/state", a.skillsState)
+	mux.HandleFunc("POST /api/skills/repo/add", a.skillsRepoAdd)
+	mux.HandleFunc("POST /api/skills/repo/remove", a.skillsRepoRemove)
+	mux.HandleFunc("POST /api/skills/browse", a.skillsBrowse)
+	mux.HandleFunc("POST /api/skills/install", a.skillsInstall)
+	mux.HandleFunc("POST /api/skills/uninstall", a.skillsUninstall)
+	mux.HandleFunc("POST /api/skills/use", a.skillsUse)
+	mux.HandleFunc("GET /api/workspace", a.getWorkspace)
+	mux.HandleFunc("POST /api/workspace", a.setWorkspace)
 
 	srv := &http.Server{Addr: addr, Handler: local(mux)}
 	return srv.ListenAndServe()
@@ -226,6 +241,25 @@ func (a *api) chat(w http.ResponseWriter, r *http.Request) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
+	// 检测 /技能名 命令，直接激活该技能
+	msg := strings.TrimSpace(in.Message)
+	if strings.HasPrefix(msg, "/") && !strings.Contains(msg, " ") {
+		skillName := strings.TrimPrefix(msg, "/")
+		// 检查技能是否存在
+		installed := a.market.ListInstalled()
+		found := false
+		for _, name := range installed {
+			if name == skillName {
+				found = true
+				break
+			}
+		}
+		if found {
+			a.session.ActiveSkill = skillName
+			send("skills", []string{skillName})
+		}
+	}
+
 	if names := a.session.MatchedSkills(in.Message); len(names) > 0 {
 		send("skills", names)
 	}
@@ -243,5 +277,115 @@ func (a *api) reset(w http.ResponseWriter, _ *http.Request) {
 	a.mu.Lock()
 	a.session.Reset()
 	a.mu.Unlock()
+	writeJSON(w, 200, map[string]bool{"ok": true})
+}
+
+// ==================== skills 市场 ====================
+
+func (a *api) skillsState(w http.ResponseWriter, _ *http.Request) {
+	repos, _ := a.market.ListRepos()
+	installed := a.market.ListInstalled()
+	writeJSON(w, 200, map[string]any{
+		"repos":     repos,
+		"installed": installed,
+		"active":    a.session.ActiveSkill,
+	})
+}
+
+func (a *api) skillsRepoAdd(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		URL string `json:"url"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil || strings.TrimSpace(in.URL) == "" {
+		writeErr(w, 400, fmt.Errorf("url 不能为空"))
+		return
+	}
+	if err := a.market.AddRepo(in.URL); err != nil {
+		writeErr(w, 400, err)
+		return
+	}
+	writeJSON(w, 200, map[string]bool{"ok": true})
+}
+
+func (a *api) skillsRepoRemove(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		URL string `json:"url"`
+	}
+	json.NewDecoder(r.Body).Decode(&in)
+	if err := a.market.RemoveRepo(in.URL); err != nil {
+		writeErr(w, 400, err)
+		return
+	}
+	writeJSON(w, 200, map[string]bool{"ok": true})
+}
+
+func (a *api) skillsBrowse(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		URL string `json:"url"`
+	}
+	json.NewDecoder(r.Body).Decode(&in)
+	list, err := a.market.BrowseRepo(in.URL)
+	if err != nil {
+		writeErr(w, 400, err)
+		return
+	}
+	repo, _ := a.market.GetRepo(in.URL)
+	writeJSON(w, 200, map[string]any{"repo": repo, "skills": list})
+}
+
+func (a *api) skillsInstall(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		URL  string `json:"url"`
+		Name string `json:"name"`
+	}
+	json.NewDecoder(r.Body).Decode(&in)
+	if err := a.market.Install(in.URL, in.Name); err != nil {
+		writeErr(w, 400, err)
+		return
+	}
+	a.session.ReloadSkills()
+	writeJSON(w, 200, map[string]bool{"ok": true})
+}
+
+func (a *api) skillsUninstall(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Name string `json:"name"`
+	}
+	json.NewDecoder(r.Body).Decode(&in)
+	if err := a.market.Uninstall(in.Name); err != nil {
+		writeErr(w, 400, err)
+		return
+	}
+	a.session.ReloadSkills()
+	if a.session.ActiveSkill == in.Name {
+		a.session.ActiveSkill = ""
+	}
+	writeJSON(w, 200, map[string]bool{"ok": true})
+}
+
+func (a *api) skillsUse(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Name string `json:"name"`
+	}
+	json.NewDecoder(r.Body).Decode(&in)
+	a.session.ActiveSkill = in.Name
+	writeJSON(w, 200, map[string]bool{"ok": true})
+}
+
+// ==================== workspace 工作空间 ====================
+
+func (a *api) getWorkspace(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, 200, map[string]string{"workspace": a.session.Workspace})
+}
+
+func (a *api) setWorkspace(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Workspace string `json:"workspace"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		writeErr(w, 400, fmt.Errorf("无效的请求"))
+		return
+	}
+	a.session.Workspace = strings.TrimSpace(in.Workspace)
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }

@@ -55,14 +55,14 @@ func main() {
 		if err != nil {
 			fatal(err)
 		}
-		fmt.Printf("⚡ LongCat-frontend 桌面后端已启动: http://%s\n", *addr)
+		fmt.Printf("⚡ LongCat 桌面后端已启动: http://%s\n", *addr)
 		if err := server.Run(*addr, manager, session); err != nil {
 			fatal(err)
 		}
 	case "provider":
 		providerCmd(manager, args)
 	case "version", "-v", "--version":
-		fmt.Println("LongCat-frontend v" + version)
+		fmt.Println("LongCat v" + version)
 	case "help", "-h", "--help":
 		usage()
 	default:
@@ -156,17 +156,17 @@ func providerCmd(m *llm.Manager, args []string) {
 }
 
 func usage() {
-	fmt.Print(`LongCat-frontend v` + version + ` — 轻量级前端开发 Agent
+	fmt.Print(`LongCat v` + version + ` — 智能通用 AI 助手
 
 用法:
-  LongCat-frontend [tui]                 启动终端 TUI（默认）
-  LongCat-frontend serve [-addr host:port]  启动桌面后端 (默认 127.0.0.1:5510)
-  LongCat-frontend provider list         列出供应商
-  LongCat-frontend provider add -id <id> -url <url> -key <key> -protocol <p> -model <m>
-  LongCat-frontend provider update ...   更新供应商（参数同 add）
-  LongCat-frontend provider remove <id>  删除供应商
-  LongCat-frontend provider use <id>     切换当前供应商
-  LongCat-frontend version               打印版本
+  LongCat [tui]                 启动终端 TUI（默认）
+  LongCat serve [-addr host:port]  启动桌面后端 (默认 127.0.0.1:5510)
+  LongCat provider list         列出供应商
+  LongCat provider add -id <id> -url <url> -key <key> -protocol <p> -model <m>
+  LongCat provider update ...   更新供应商（参数同 add）
+  LongCat provider remove <id>  删除供应商
+  LongCat provider use <id>     切换当前供应商
+  LongCat version               打印版本
 
 协议: openai_chat | openai_responses | anthropic_messages | ollama_chat
 `)
