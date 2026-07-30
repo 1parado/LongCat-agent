@@ -69,6 +69,31 @@ func (p Provider) Redacted() string {
 type Message struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
+	// ToolCalls is populated on assistant messages that request tools.
+	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string     `json:"tool_call_id,omitempty"`
+	Name       string     `json:"name,omitempty"`
+}
+
+// FunctionDefinition describes a callable function in OpenAI/Anthropic tool format.
+type FunctionDefinition struct {
+	Name        string         `json:"name"`
+	Description string         `json:"description,omitempty"`
+	Parameters  map[string]any `json:"parameters,omitempty"`
+}
+
+type Tool struct {
+	Type     string             `json:"type"`
+	Function FunctionDefinition `json:"function,omitempty"`
+}
+
+type ToolCall struct {
+	ID       string `json:"id"`
+	Type     string `json:"type,omitempty"`
+	Function struct {
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	} `json:"function"`
 }
 
 // store 是持久化文件的结构。

@@ -13,26 +13,38 @@
 package server
 
 import (
+	"context"
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"mime"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"LongCat-frontend/internal/agent"
 	"LongCat-frontend/internal/llm"
 	"LongCat-frontend/internal/skills"
+	"LongCat-frontend/internal/workspace"
 )
 
 //go:embed web
 var webFS embed.FS
 
 type api struct {
-	manager *llm.Manager
-	session *agent.Session
-	market  *skills.Market
-	mu      sync.Mutex // 串行化对话，轻量会话无需并发
+	manager         *llm.Manager
+	session         *agent.Session
+	market          *skills.Market
+	workspaces      *workspace.Store
+	activeWorkspace workspace.Workspace
+	activeSessionID string
+	cancelMu        sync.Mutex
+	cancel          context.CancelFunc
+	mu              sync.Mutex // 串行化对话，轻量会话无需并发
 }
 
 // Run 阻塞式启动 HTTP 服务。
@@ -41,7 +53,11 @@ func Run(addr string, m *llm.Manager, s *agent.Session) error {
 	if err != nil {
 		return fmt.Errorf("初始化 skills 市场失败: %w", err)
 	}
-	a := &api{manager: m, session: s, market: mkt}
+	ws, err := workspace.NewStore()
+	if err != nil {
+		return fmt.Errorf("初始化工作空间存储失败: %w", err)
+	}
+	a := &api{manager: m, session: s, market: mkt, workspaces: ws}
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /", a.index)
@@ -51,6 +67,7 @@ func Run(addr string, m *llm.Manager, s *agent.Session) error {
 	mux.HandleFunc("DELETE /api/providers/{id}", a.removeProvider)
 	mux.HandleFunc("POST /api/providers/{id}/use", a.useProvider)
 	mux.HandleFunc("POST /api/chat", a.chat)
+	mux.HandleFunc("POST /api/chat/stop", a.stopChat)
 	mux.HandleFunc("POST /api/reset", a.reset)
 	mux.HandleFunc("GET /api/skills/state", a.skillsState)
 	mux.HandleFunc("POST /api/skills/repo/add", a.skillsRepoAdd)
@@ -60,7 +77,15 @@ func Run(addr string, m *llm.Manager, s *agent.Session) error {
 	mux.HandleFunc("POST /api/skills/uninstall", a.skillsUninstall)
 	mux.HandleFunc("POST /api/skills/use", a.skillsUse)
 	mux.HandleFunc("GET /api/workspace", a.getWorkspace)
+	mux.HandleFunc("GET /api/preview-file", a.previewFile)
+	mux.HandleFunc("GET /api/preview/{path...}", a.previewFile)
 	mux.HandleFunc("POST /api/workspace", a.setWorkspace)
+	mux.HandleFunc("GET /api/workspaces", a.listWorkspaces)
+	mux.HandleFunc("POST /api/workspaces/open", a.openWorkspace)
+	mux.HandleFunc("GET /api/sessions", a.listSessions)
+	mux.HandleFunc("POST /api/sessions", a.createSession)
+	mux.HandleFunc("POST /api/sessions/{id}/use", a.useSession)
+	mux.HandleFunc("DELETE /api/sessions/{id}", a.deleteSession)
 
 	srv := &http.Server{Addr: addr, Handler: local(mux)}
 	return srv.ListenAndServe()
@@ -96,6 +121,76 @@ func (a *api) index(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(data)
 }
 
+// previewFile serves a read-only file from the active workspace for the
+// embedded browser. It deliberately reuses the same workspace-bound path
+// rules as the agent tools and never accepts an arbitrary filesystem root.
+func (a *api) previewFile(w http.ResponseWriter, r *http.Request) {
+	a.mu.Lock()
+	root := a.activeWorkspace.Path
+	a.mu.Unlock()
+	if root == "" {
+		http.Error(w, "请先打开一个文件夹", http.StatusBadRequest)
+		return
+	}
+	root, err := filepath.Abs(root)
+	if err != nil {
+		http.Error(w, "工作文件夹无效", http.StatusInternalServerError)
+		return
+	}
+	requested := strings.TrimSpace(r.URL.Query().Get("path"))
+	if requested == "" {
+		requested = strings.TrimPrefix(r.PathValue("path"), "/")
+	}
+	if requested == "" {
+		http.Error(w, "请输入预览文件路径", http.StatusBadRequest)
+		return
+	}
+	var target string
+	if filepath.IsAbs(requested) {
+		target = filepath.Clean(requested)
+	} else {
+		target = filepath.Clean(filepath.Join(root, filepath.FromSlash(requested)))
+	}
+	rel, _ := filepath.Rel(root, target)
+	if rel == "." || strings.HasSuffix(requested, "/") || strings.HasSuffix(requested, "\\") {
+		target = filepath.Join(target, "index.html")
+		rel, _ = filepath.Rel(root, target)
+	}
+	check, err := filepath.Rel(root, target)
+	if err != nil || check == ".." || strings.HasPrefix(check, ".."+string(filepath.Separator)) {
+		http.Error(w, "预览路径必须位于当前文件夹内", http.StatusForbidden)
+		return
+	}
+	if resolved, evalErr := filepath.EvalSymlinks(target); evalErr == nil {
+		if resolvedRoot, rootErr := filepath.EvalSymlinks(root); rootErr == nil {
+			r, relErr := filepath.Rel(resolvedRoot, resolved)
+			if relErr != nil || r == ".." || strings.HasPrefix(r, ".."+string(filepath.Separator)) {
+				http.Error(w, "预览路径不能通过符号链接离开当前文件夹", http.StatusForbidden)
+				return
+			}
+		}
+	}
+	file, err := os.Open(target)
+	if err != nil {
+		http.Error(w, "预览文件不存在: "+filepath.ToSlash(rel), http.StatusNotFound)
+		return
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil || info.IsDir() {
+		http.Error(w, "预览目标不是文件", http.StatusNotFound)
+		return
+	}
+	contentType := mime.TypeByExtension(filepath.Ext(target))
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Security-Policy", "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https:; img-src 'self' data: blob: https:;")
+	w.Header().Set("Cache-Control", "no-cache")
+	http.ServeContent(w, r, filepath.Base(target), info.ModTime().Round(time.Second), file)
+}
+
 func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(code)
@@ -118,6 +213,8 @@ type providerView struct {
 }
 
 func (a *api) state(w http.ResponseWriter, _ *http.Request) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	active := a.manager.ActiveID()
 	views := []providerView{}
 	for _, p := range a.manager.List() {
@@ -134,10 +231,20 @@ func (a *api) state(w http.ResponseWriter, _ *http.Request) {
 	for _, p := range llm.SupportedProtocols() {
 		protocols = append(protocols, string(p))
 	}
+	var ws any
+	var sessions any = []any{}
+	if a.activeWorkspace.ID != "" {
+		ws = a.activeWorkspace
+		sessions = a.workspaces.ListSessions(a.activeWorkspace.ID)
+	}
 	writeJSON(w, 200, map[string]any{
-		"providers": views,
-		"skills":    skills,
-		"protocols": protocols,
+		"providers":         views,
+		"skills":            skills,
+		"protocols":         protocols,
+		"workspace":         ws,
+		"workspaces":        a.workspaces.ListWorkspaces(),
+		"sessions":          sessions,
+		"active_session_id": a.activeSessionID,
 	})
 }
 
@@ -240,6 +347,10 @@ func (a *api) chat(w http.ResponseWriter, r *http.Request) {
 
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if a.activeWorkspace.ID == "" || a.activeSessionID == "" {
+		send("error", "请先打开一个文件夹并创建会话")
+		return
+	}
 
 	// 检测 /技能名 命令，直接激活该技能
 	msg := strings.TrimSpace(in.Message)
@@ -263,19 +374,52 @@ func (a *api) chat(w http.ResponseWriter, r *http.Request) {
 	if names := a.session.MatchedSkills(in.Message); len(names) > 0 {
 		send("skills", names)
 	}
-	_, err := a.session.Ask(r.Context(), in.Message, func(delta string) {
+	ctx, cancel := context.WithCancel(r.Context())
+	a.cancelMu.Lock()
+	a.cancel = cancel
+	a.cancelMu.Unlock()
+	defer func() {
+		cancel()
+		a.cancelMu.Lock()
+		a.cancel = nil
+		a.cancelMu.Unlock()
+	}()
+	_, err := a.session.Ask(ctx, in.Message, func(delta string) {
 		send("delta", delta)
 	})
 	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			_ = a.saveActiveLocked()
+			send("stopped", true)
+			send("done", true)
+			return
+		}
+		send("error", err.Error())
+		return
+	}
+	if err := a.saveActiveLocked(); err != nil {
 		send("error", err.Error())
 		return
 	}
 	send("done", true)
 }
 
+func (a *api) stopChat(w http.ResponseWriter, _ *http.Request) {
+	a.cancelMu.Lock()
+	cancel := a.cancel
+	a.cancelMu.Unlock()
+	if cancel == nil {
+		writeJSON(w, 200, map[string]any{"ok": true, "stopped": false})
+		return
+	}
+	cancel()
+	writeJSON(w, 200, map[string]any{"ok": true, "stopped": true})
+}
+
 func (a *api) reset(w http.ResponseWriter, _ *http.Request) {
 	a.mu.Lock()
 	a.session.Reset()
+	_ = a.saveActiveLocked()
 	a.mu.Unlock()
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
@@ -375,7 +519,13 @@ func (a *api) skillsUse(w http.ResponseWriter, r *http.Request) {
 // ==================== workspace 工作空间 ====================
 
 func (a *api) getWorkspace(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, 200, map[string]string{"workspace": a.session.Workspace})
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.activeWorkspace.ID == "" {
+		writeJSON(w, 200, map[string]any{"workspace": "", "workspaces": a.workspaces.ListWorkspaces(), "sessions": []any{}})
+		return
+	}
+	writeJSON(w, 200, map[string]any{"workspace": a.activeWorkspace.Path, "workspace_info": a.activeWorkspace, "workspaces": a.workspaces.ListWorkspaces(), "sessions": a.workspaces.ListSessions(a.activeWorkspace.ID), "active_session_id": a.activeSessionID})
 }
 
 func (a *api) setWorkspace(w http.ResponseWriter, r *http.Request) {
@@ -386,6 +536,149 @@ func (a *api) setWorkspace(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, fmt.Errorf("无效的请求"))
 		return
 	}
-	a.session.Workspace = strings.TrimSpace(in.Workspace)
+	if err := a.openFolder(strings.TrimSpace(in.Workspace)); err != nil {
+		writeErr(w, 400, err)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"ok": true, "workspace": a.activeWorkspace, "session_id": a.activeSessionID})
+}
+
+func (a *api) listWorkspaces(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, 200, map[string]any{"workspaces": a.workspaces.ListWorkspaces(), "active_workspace_id": a.activeWorkspace.ID})
+}
+
+func (a *api) openWorkspace(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Path      string `json:"path"`
+		Workspace string `json:"workspace"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		writeErr(w, 400, fmt.Errorf("无效的请求"))
+		return
+	}
+	path := in.Path
+	if strings.TrimSpace(path) == "" {
+		path = in.Workspace
+	}
+	if err := a.openFolder(path); err != nil {
+		writeErr(w, 400, err)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"workspace": a.activeWorkspace, "sessions": a.workspaces.ListSessions(a.activeWorkspace.ID), "active_session_id": a.activeSessionID})
+}
+
+func (a *api) openFolder(path string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	w, err := a.workspaces.OpenFolder(path)
+	if err != nil {
+		return err
+	}
+	if err := a.saveActiveLocked(); err != nil {
+		return err
+	}
+	a.activeWorkspace = w
+	sessions := a.workspaces.ListSessions(w.ID)
+	if len(sessions) == 0 {
+		r, e := a.workspaces.CreateSession(w.ID, "新会话")
+		if e != nil {
+			return e
+		}
+		sessions = []workspace.SessionRecord{r}
+	}
+	return a.activateSessionLocked(sessions[0].ID)
+}
+
+func (a *api) listSessions(w http.ResponseWriter, _ *http.Request) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.activeWorkspace.ID == "" {
+		writeJSON(w, 200, map[string]any{"sessions": []any{}, "active_session_id": ""})
+		return
+	}
+	writeJSON(w, 200, map[string]any{"workspace": a.activeWorkspace, "sessions": a.workspaces.ListSessions(a.activeWorkspace.ID), "active_session_id": a.activeSessionID})
+}
+
+func (a *api) createSession(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Title string `json:"title"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&in)
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.activeWorkspace.ID == "" {
+		writeErr(w, 400, fmt.Errorf("请先打开一个文件夹"))
+		return
+	}
+	if err := a.saveActiveLocked(); err != nil {
+		writeErr(w, 500, err)
+		return
+	}
+	rc, err := a.workspaces.CreateSession(a.activeWorkspace.ID, in.Title)
+	if err != nil {
+		writeErr(w, 400, err)
+		return
+	}
+	if err := a.activateSessionLocked(rc.ID); err != nil {
+		writeErr(w, 500, err)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"session": rc, "active_session_id": a.activeSessionID})
+}
+
+func (a *api) useSession(w http.ResponseWriter, r *http.Request) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if err := a.activateSessionLocked(r.PathValue("id")); err != nil {
+		writeErr(w, 404, err)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"ok": true, "active_session_id": a.activeSessionID})
+}
+
+func (a *api) deleteSession(w http.ResponseWriter, r *http.Request) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	id := r.PathValue("id")
+	if id == a.activeSessionID {
+		writeErr(w, 400, fmt.Errorf("不能删除当前会话，请先切换会话"))
+		return
+	}
+	if err := a.workspaces.DeleteSession(id); err != nil {
+		writeErr(w, 404, err)
+		return
+	}
 	writeJSON(w, 200, map[string]bool{"ok": true})
+}
+
+func (a *api) saveActiveLocked() error {
+	if a.activeSessionID == "" {
+		return nil
+	}
+	r, ok := a.workspaces.GetSession(a.activeSessionID)
+	if !ok {
+		return nil
+	}
+	r.Messages = append([]llm.Message(nil), a.session.Messages...)
+	r.Mode = a.session.Mode
+	r.ActiveSkill = a.session.ActiveSkill
+	return a.workspaces.SaveSession(r)
+}
+
+func (a *api) activateSessionLocked(id string) error {
+	r, ok := a.workspaces.GetSession(id)
+	if !ok {
+		return fmt.Errorf("会话 %q 不存在", id)
+	}
+	w, ok := a.workspaces.GetWorkspace(r.WorkspaceID)
+	if !ok {
+		return errors.New("会话所属工作空间不存在")
+	}
+	a.activeWorkspace = w
+	a.activeSessionID = id
+	a.session.Workspace = w.Path
+	a.session.Messages = append([]llm.Message(nil), r.Messages...)
+	a.session.Mode = r.Mode
+	a.session.ActiveSkill = r.ActiveSkill
+	return nil
 }

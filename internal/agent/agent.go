@@ -4,6 +4,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -61,21 +62,21 @@ var modeDesc = map[string]string{
 	"svelte":   "Svelte / SvelteKit",
 	"tailwind": "Tailwind CSS 优先的样式方案",
 	// 后端开发
-	"python":   "Python（FastAPI、Django、Flask）",
-	"go":       "Go（Gin、Echo、标准库）",
-	"node":     "Node.js（Express、Fastify、NestJS）",
-	"java":     "Java（Spring Boot、Maven、Gradle）",
-	"rust":     "Rust（Actix、Rocket、Tokio）",
+	"python": "Python（FastAPI、Django、Flask）",
+	"go":     "Go（Gin、Echo、标准库）",
+	"node":   "Node.js（Express、Fastify、NestJS）",
+	"java":   "Java（Spring Boot、Maven、Gradle）",
+	"rust":   "Rust（Actix、Rocket、Tokio）",
 	// 数据科学
-	"data":     "数据科学（Pandas、NumPy、Matplotlib、Jupyter）",
-	"ml":       "机器学习（Scikit-learn、TensorFlow、PyTorch）",
+	"data": "数据科学（Pandas、NumPy、Matplotlib、Jupyter）",
+	"ml":   "机器学习（Scikit-learn、TensorFlow、PyTorch）",
 	// DevOps
-	"docker":   "Docker 容器化与容器编排",
-	"k8s":      "Kubernetes 集群管理",
-	"cicd":     "CI/CD 自动化部署",
+	"docker": "Docker 容器化与容器编排",
+	"k8s":    "Kubernetes 集群管理",
+	"cicd":   "CI/CD 自动化部署",
 	// 数据库
-	"sql":      "SQL 数据库（PostgreSQL、MySQL、SQLite）",
-	"nosql":    "NoSQL 数据库（MongoDB、Redis、Cassandra）",
+	"sql":   "SQL 数据库（PostgreSQL、MySQL、SQLite）",
+	"nosql": "NoSQL 数据库（MongoDB、Redis、Cassandra）",
 	// 其他
 	"api":      "API 设计与开发（RESTful、GraphQL、gRPC）",
 	"test":     "测试（单元测试、集成测试、E2E 测试）",
@@ -125,18 +126,24 @@ func (s *Session) buildSystem(userInput string) string {
 		b.WriteString(modeDesc[s.Mode])
 		b.WriteString("。")
 	}
+	if len(s.Skills) > 0 {
+		b.WriteString("\n\n## 可用技能\n需要某项专门知识时，主动调用 `load_skill` 工具读取正文。\n")
+		for _, sk := range s.Skills {
+			b.WriteString(fmt.Sprintf("- `%s`: %s\n", sk.Name, sk.Description))
+		}
+	}
 	if s.ActiveSkill != "" {
 		for _, sk := range s.Skills {
 			if sk.Name == s.ActiveSkill {
 				b.WriteString("\n\n## 已激活技能（手动选择）\n")
-				b.WriteString(fmt.Sprintf("\n### %s\n%s\n", sk.Title, sk.Body))
+				b.WriteString(fmt.Sprintf("技能 `%s` 已选中；需要正文时调用 `load_skill`。\n", sk.Name))
 				break
 			}
 		}
 	} else if matched := frontend.Match(s.Skills, userInput, 3); len(matched) > 0 {
-		b.WriteString("\n\n## 已激活技能\n")
+		b.WriteString("\n\n## 相关技能\n")
 		for _, sk := range matched {
-			b.WriteString(fmt.Sprintf("\n### %s\n%s\n", sk.Title, sk.Body))
+			b.WriteString(fmt.Sprintf("- `%s`: %s（需要时调用 load_skill）\n", sk.Name, sk.Description))
 		}
 	}
 	return b.String()
@@ -161,9 +168,38 @@ func (s *Session) Ask(ctx context.Context, input string, onDelta llm.StreamFunc)
 	msgs = append(msgs, s.Messages...)
 	msgs = append(msgs, llm.Message{Role: "user", Content: input})
 
-	reply, err := llm.Chat(ctx, provider, msgs, onDelta)
-	if err != nil {
-		return "", err
+	exec := &ToolExecutor{Workspace: s.Workspace, Skills: s.Skills}
+	var reply string
+	for round := 0; round < 8; round++ {
+		if err := ctx.Err(); err != nil {
+			s.commitInterrupted(input, reply)
+			return reply, err
+		}
+		result, err := llm.ChatWithTools(ctx, provider, llm.ChatOptions{Messages: msgs, Tools: exec.Definitions(), OnDelta: onDelta})
+		if err != nil {
+			if errors.Is(err, context.Canceled) {
+				s.commitInterrupted(input, reply)
+			}
+			return reply, err
+		}
+		reply += result.Content
+		if len(result.ToolCalls) == 0 {
+			break
+		}
+		// Preserve the assistant tool-call turn, then append one tool result per call.
+		assistant := llm.Message{Role: "assistant", Content: result.Content, ToolCalls: result.ToolCalls}
+		msgs = append(msgs, assistant)
+		for _, call := range result.ToolCalls {
+			if err := ctx.Err(); err != nil {
+				s.commitInterrupted(input, reply)
+				return reply, err
+			}
+			out, callErr := exec.Execute(call.Function.Name, call.Function.Arguments)
+			if callErr != nil {
+				out = "工具执行失败: " + callErr.Error()
+			}
+			msgs = append(msgs, llm.Message{Role: "tool", Content: out, ToolCallID: call.ID, Name: call.Function.Name})
+		}
 	}
 	s.Messages = append(s.Messages,
 		llm.Message{Role: "user", Content: input},
@@ -174,6 +210,16 @@ func (s *Session) Ask(ctx context.Context, input string, onDelta llm.StreamFunc)
 		s.Messages = s.Messages[len(s.Messages)-20:]
 	}
 	return reply, nil
+}
+
+func (s *Session) commitInterrupted(input, reply string) {
+	s.Messages = append(s.Messages, llm.Message{Role: "user", Content: input})
+	if reply != "" {
+		s.Messages = append(s.Messages, llm.Message{Role: "assistant", Content: reply})
+	}
+	if len(s.Messages) > 20 {
+		s.Messages = s.Messages[len(s.Messages)-20:]
+	}
 }
 
 // Reset 清空会话历史。

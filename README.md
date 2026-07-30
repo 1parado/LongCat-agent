@@ -88,4 +88,17 @@ cargo build
 
 `openai_chat` · `openai_responses` · `anthropic_messages` · `ollama_chat`
 
+### Agent tool-use
 
+先在 Web UI 侧栏点击“打开文件夹”（桌面版可用“浏览…”弹出系统文件夹选择器；浏览器模式可输入路径）。打开的文件夹就是 Agent 的真实工作路径；一个文件夹下可以创建、切换多个独立会话，消息历史会持久化保存。回复生成期间点击红色停止按钮即可中断当前模型请求；当前文件夹旁的 ↗ 按钮可在系统文件管理器中打开该位置（桌面版）。
+
+右上角“预览”会打开轻量浏览器：地址栏默认保持空白，只有输入地址或点击“首页”后才开始加载。支持本地绝对路径、`/api/preview/相对路径` 和完整的 `http(s)` 地址；本地预览文件始终限制在当前工作区内。
+
+会话在打开文件夹后会向模型暴露以下工具：
+
+- `list_directory`：列出工作空间目录
+- `read_file`：读取工作空间文本文件
+- `write_file`：写入工作空间文本文件
+- `load_skill`：按需读取某个已安装技能的 `SKILL.md`
+
+工具调用由 Agent 执行并把结果回传给模型；文件路径会限制在工作空间根目录内。OpenAI Chat、Anthropic Messages、OpenAI Responses 与 Ollama 均提供统一的 `ChatWithTools` 接口。

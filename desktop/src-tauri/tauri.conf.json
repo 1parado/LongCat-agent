@@ -8,6 +8,7 @@
     "devUrl": "http://127.0.0.1:5510"
   },
   "app": {
+    "withGlobalTauri": true,
     "windows": [
       {
         "title": "LongCat-frontend",

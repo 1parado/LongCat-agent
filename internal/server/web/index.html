@@ -216,6 +216,7 @@ body{font-family:var(--font-sans);font-size:var(--text-sm);color:var(--text-prim
   transition:background var(--motion-fast),opacity var(--motion-fast)}
 .send-btn:hover{background:var(--accent-hover)}
 .send-btn:disabled{opacity:.4;cursor:not-allowed}
+.stop-btn{width:30px;height:30px;border:none;border-radius:var(--radius-full);background:var(--danger);color:#fff;cursor:pointer;font-size:13px;display:none;align-items:center;justify-content:center}
 .composer-hint{font-size:11px;color:var(--text-tertiary);text-align:center;padding:7px 0 0}
 
 /* ---- Preview pane ---- */
@@ -228,7 +229,12 @@ body{font-family:var(--font-sans);font-size:var(--text-sm);color:var(--text-prim
   min-width:100%!important;max-width:100%!important;z-index:1000;
   box-shadow:0 0 0 1px var(--border-subtle)}
 .pp-head{height:var(--titlebar-height);display:flex;align-items:center;justify-content:space-between;
-  padding:0 14px;font-size:var(--text-xs);color:var(--text-secondary);flex-shrink:0}
+  padding:0 10px;font-size:var(--text-xs);color:var(--text-secondary);flex-shrink:0}
+.browser-toolbar{display:flex;align-items:center;gap:4px;padding:5px 8px;background:var(--bg-elevated);border-top:1px solid var(--border-subtle);border-bottom:1px solid var(--border-subtle)}
+.browser-nav{width:25px;height:25px;border:0;border-radius:var(--radius-sm);background:transparent;color:var(--text-secondary);cursor:pointer;font-size:13px}
+.browser-nav:hover{background:var(--bg-hover);color:var(--text-primary)}
+.browser-address{flex:1;min-width:0;height:25px;border:1px solid var(--border-subtle);border-radius:var(--radius-full);background:var(--bg-input);color:var(--text-primary);padding:0 10px;font:11px var(--font-mono);outline:none}
+.browser-address:focus{border-color:var(--border-focus)}
 .pp-frame{flex:1;border:0;background:#fff;border-radius:var(--radius-md);margin:0 10px 10px}
 
 /* ---- Resize handle ---- */
@@ -382,13 +388,18 @@ body{font-family:var(--font-sans);font-size:var(--text-sm);color:var(--text-prim
     <nav class="sb-nav" id="sbNav"></nav>
     <div class="sb-title">工作空间</div>
     <div style="padding:0 10px;margin-bottom:16px">
-      <input type="text" id="workspaceInput" placeholder="选择工作空间路径"
+      <input type="text" id="workspaceInput" placeholder="输入要打开的文件夹路径"
         style="width:100%;padding:6px 10px;border:1px solid var(--border-subtle);border-radius:var(--radius-md);
         background:var(--bg-input);color:var(--text-primary);font-size:var(--text-xs);outline:none;transition:border var(--motion-fast)">
+      <div style="display:flex;gap:5px;margin-top:6px">
+      <button id="btnPickWorkspace" style="flex:0 0 auto;padding:6px 9px;background:var(--bg-hover);color:var(--text-primary);border:1px solid var(--border-subtle);border-radius:var(--radius-md);font-size:var(--text-xs);cursor:pointer">浏览…</button>
       <button id="btnSetWorkspace"
         style="width:100%;margin-top:6px;padding:6px;background:var(--accent);color:#fff;border:0;border-radius:var(--radius-md);
-        font-size:var(--text-xs);font-weight:500;cursor:pointer;transition:all var(--motion-fast)">设置工作空间</button>
-      <div id="currentWorkspace" style="margin-top:6px;font-size:10.5px;color:var(--text-tertiary);word-break:break-all"></div>
+        font-size:var(--text-xs);font-weight:500;cursor:pointer;transition:all var(--motion-fast)">打开文件夹</button>
+      </div>
+      <div style="display:flex;align-items:flex-start;gap:5px;margin-top:6px"><div id="currentWorkspace" style="flex:1;font-size:10.5px;color:var(--text-tertiary);word-break:break-all"></div><button id="btnRevealWorkspace" class="chip-btn" style="display:none;height:22px" title="在文件管理器中打开">↗</button></div>
+      <div id="workspaceList" style="margin-top:8px"></div>
+      <div id="sessionPanel" style="margin-top:10px"></div>
     </div>
     <div class="sb-title" data-i18n="providersTitle">供应商</div>
     <div id="providerList"></div>
@@ -448,6 +459,7 @@ body{font-family:var(--font-sans);font-size:var(--text-sm);color:var(--text-prim
           <button class="chip-btn" id="chipModel">—</button>
           <button class="chip-btn" id="chipReset" data-i18n="resetChip">↺ 重置</button>
           <div class="grow"></div>
+          <button class="stop-btn" id="btnStop" title="中断回复">■</button>
           <button class="send-btn" id="btnSend" title="Enter">↑</button>
         </div>
       </div>
@@ -459,13 +471,21 @@ body{font-family:var(--font-sans);font-size:var(--text-sm);color:var(--text-prim
 <!-- ========== Preview ========== -->
 <div class="preview-pane" id="rightPreview">
   <div class="pp-head">
-    <span data-i18n="previewTitle">实时预览</span>
+    <span data-i18n="previewTitle">轻量浏览器</span>
     <div style="display:flex;gap:2px">
       <button class="icon-btn" id="btnPreviewFullscreen" title="全屏切换">⛶</button>
       <button class="icon-btn" onclick="togglePreview()">✕</button>
     </div>
   </div>
-  <iframe class="pp-frame" id="previewFrame" sandbox="allow-scripts"></iframe>
+  <div class="browser-toolbar">
+    <button class="browser-nav" id="previewBack" title="后退">‹</button>
+    <button class="browser-nav" id="previewForward" title="前进">›</button>
+    <button class="browser-nav" id="previewReload" title="刷新">↻</button>
+    <button class="browser-nav" id="previewHome" title="工作区首页">⌂</button>
+    <input class="browser-address" id="previewAddress" value="" placeholder="输入本地文件路径或网址" spellcheck="false" aria-label="预览地址">
+    <button class="browser-nav" id="previewGo" title="打开">↵</button>
+  </div>
+  <iframe class="pp-frame" id="previewFrame" sandbox="allow-scripts allow-forms allow-modals"></iframe>
 </div>
 <div class="resize-handle" id="rightResize"></div>
 
@@ -585,7 +605,7 @@ function toggleLang(){curLang=curLang==='zh-CN'?'en-US':'zh-CN';localStorage.set
 // ============================================================
 const $=id=>document.getElementById(id);
 let state={providers:[],skills:[],protocols:[]};
-let editing=null,busy=false,previewOn=false;
+let editing=null,busy=false,previewOn=false,activeController=null;
 let sidebarCollapsed=false,previewCollapsed=false;
 let isFullscreen=false;
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
@@ -724,14 +744,14 @@ async function send(){
     return;
   }
 
-  busy=true;$('btnSend').disabled=true;input.value='';autoGrow();
+  busy=true;activeController=new AbortController();$('btnSend').style.display='none';$('btnStop').style.display='flex';input.value='';autoGrow();
   const u=addMsg('user');u.querySelector('.msg-body').textContent=text;
   const a=addMsg('assistant');
   const body=a.querySelector('.msg-body');
   body.innerHTML=`<span style="color:var(--text-tertiary)">${t('thinking')}</span>`;
   let acc='';
   try{
-    const resp=await fetch('/api/chat',{method:'POST',
+    const resp=await fetch('/api/chat',{method:'POST',signal:activeController.signal,
       headers:{'Content-Type':'application/json'},body:JSON.stringify({message:text})});
     const reader=resp.body.getReader();const dec=new TextDecoder();let buf='';
     for(;;){
@@ -749,25 +769,61 @@ async function send(){
         else if(ev==='skills'){a.querySelector('.skill-tags').innerHTML=
           data.map(n=>`<span class="st-tag">◆ ${esc(n)}</span>`).join('');}
         else if(ev==='error'){body.innerHTML=`<span style="color:var(--danger)">${t('errorPrefix')}${esc(data)}</span>`;}
+        else if(ev==='stopped'){body.innerHTML+='<div style="color:var(--text-tertiary);font-size:11px">已中断</div>';}
       }
     }
     renderMd(body,acc);
     updatePreview(acc);
   }catch(e){
-    body.innerHTML=`<span style="color:var(--danger)">${t('errorPrefix')}${esc(String(e))}</span>`;
+    if(e.name!=='AbortError') body.innerHTML=`<span style="color:var(--danger)">${t('errorPrefix')}${esc(String(e))}</span>`;
   }
-  busy=false;$('btnSend').disabled=false;scrollBottom();
+  busy=false;activeController=null;$('btnSend').style.display='flex';$('btnStop').style.display='none';$('btnSend').disabled=false;scrollBottom();
+}
+async function stopReply(){
+  if(!busy)return;
+  try{await fetch('/api/chat/stop',{method:'POST'});}catch(e){}
+  if(activeController)activeController.abort();
 }
 function scrollBottom(){const c=$('chatArea');c.scrollTop=c.scrollHeight;}
 
 // ============================================================
 // Preview
 // ============================================================
+let previewUrl='';
+function normalizePreviewUrl(raw){
+  let value=String(raw||'').trim();
+  if(!value)return '';
+  if(/^https?:\/\//i.test(value)||value.startsWith('/api/'))return value;
+  if(/^[A-Za-z]:[\\/]/.test(value)||value.startsWith('\\\\')||value.startsWith('/'))return '/api/preview-file?path='+encodeURIComponent(value);
+  return '/api/preview/'+value.replace(/^\.\//,'');
+}
+function navigatePreview(raw){
+  const input=String(raw||'').trim();
+  if(!input){ previewUrl=''; $('previewAddress').value=''; $('previewFrame').src=''; $('previewFrame').srcdoc=''; return; }
+  previewUrl=normalizePreviewUrl(input);
+  $('previewAddress').value=input;
+  $('previewFrame').srcdoc='';
+  $('previewFrame').src=previewUrl;
+}
+function loadWorkspacePreview(){
+  if(!previewOn || !previewUrl)return;
+  navigatePreview(previewUrl);
+}
 function updatePreview(text){
   if(!previewOn)return;
   const m=[...text.matchAll(/```(?:html)?\n([\s\S]*?)```/g)];
   const code=m.length?m[m.length-1][1]:null;
-  if(code&&/<[a-z][\s\S]*>/i.test(code))$('previewFrame').srcdoc=code;
+  if(code&&/<[a-z][\s\S]*>/i.test(code)){
+    previewUrl='generated://response';
+    $('previewAddress').value='生成的 HTML';
+    $('previewFrame').src='';
+    $('previewFrame').srcdoc=code;
+  }else{
+    loadWorkspacePreview();
+  }
+}
+function previewHistory(method){
+  try{ $('previewFrame').contentWindow.history[method](); }catch(e){ }
 }
 
 // ============================================================
@@ -793,6 +849,7 @@ $('btnAddRepo').onclick=async()=>{
   inp.value='';toast('已添加');loadSkillsView();
 };
 $('btnSend').onclick=send;
+$('btnStop').onclick=stopReply;
 $('btnResetForm').onclick=resetForm;
 $('btnSave').onclick=saveProvider;
 $('overlay').onclick=e=>{if(e.target===$('overlay'))closeModal();};
@@ -985,42 +1042,68 @@ async function showInstalledSkillsPopup(){
 // ============================================================
 async function loadWorkspace(){
   try{
-    const r=await fetch('/api/workspace');
-    const data=await r.json();
-    if(data.workspace){
-      $('workspaceInput').value=data.workspace;
-      $('currentWorkspace').textContent='当前: '+data.workspace;
-    }else{
-      $('currentWorkspace').textContent='未设置工作空间';
-    }
+    const r=await fetch('/api/workspace'); const data=await r.json();
+    renderWorkspaces(data.workspaces||[], data.workspace_info?.id);
+    if(data.workspace){ $('workspaceInput').value=data.workspace; $('currentWorkspace').textContent='已打开: '+data.workspace; $('btnRevealWorkspace').style.display='inline-flex'; $('btnRevealWorkspace').dataset.path=data.workspace; renderSessions(data.sessions||[],data.active_session_id); if(previewOn && previewUrl!=='generated://response')loadWorkspacePreview(); }
+    else { $('currentWorkspace').textContent='尚未打开文件夹'; $('sessionPanel').innerHTML=''; $('btnRevealWorkspace').style.display='none'; }
   }catch(e){
     $('currentWorkspace').textContent='加载失败';
   }
 }
 
 async function setWorkspace(){
-  const workspace=$('workspaceInput').value.trim();
-  if(!workspace){
-    toast('请输入工作空间路径');
-    return;
-  }
+  const path=$('workspaceInput').value.trim();
+  if(!path){ toast('请输入要打开的文件夹路径'); return; }
   try{
-    const r=await fetch('/api/workspace',{
+    const r=await fetch('/api/workspaces/open',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({workspace})
+      body:JSON.stringify({path})
     });
     const data=await r.json();
-    if(data.error){
-      toast('设置失败: '+data.error);
-    }else{
-      toast('工作空间已设置');
-      loadWorkspace();
-    }
+    if(data.error){ toast('打开失败: '+data.error); } else { toast('文件夹已打开'); loadWorkspace(); resetChatView(); }
   }catch(e){
-    toast('设置失败');
+    toast('打开文件夹失败');
   }
 }
+async function pickWorkspace(){
+  try{
+    const invoke=window.__TAURI__?.core?.invoke || window.__TAURI_INTERNALS__?.invoke;
+    if(!invoke){ toast('浏览器模式不支持原生选择器，请输入文件夹路径'); return; }
+    const path=await invoke('pick_folder'); if(path){ $('workspaceInput').value=path; await setWorkspace(); }
+  }catch(e){ toast('选择文件夹失败'); }
+}
+async function revealWorkspace(){
+  const path=$('btnRevealWorkspace').dataset.path; if(!path)return;
+  try{
+    const invoke=window.__TAURI__?.core?.invoke || window.__TAURI_INTERNALS__?.invoke;
+    if(!invoke){ toast('请使用桌面版打开文件夹位置'); return; }
+    await invoke('reveal_folder',{path});
+  }catch(e){ toast('打开文件夹位置失败'); }
+}
+
+function renderSessions(list,active){
+  const p=$('sessionPanel');
+  let html='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px;color:var(--text-secondary);font-size:10px"><span>会话</span><button class="chip-btn" onclick="newSession()">＋ 新建</button></div>';
+  if(!list.length){ html+='<div style="font-size:10px;color:var(--text-tertiary)">打开文件夹后创建会话</div>'; p.innerHTML=html; return; }
+  html+='<div style="display:flex;flex-direction:column;gap:3px">'+list.map(s=>`<button onclick="useSession('${esc(s.id)}')" style="text-align:left;padding:6px 8px;border:1px solid ${s.id===active?'var(--accent)':'var(--border-subtle)'};border-radius:5px;background:${s.id===active?'var(--bg-hover)':'transparent'};color:var(--text-primary);cursor:pointer;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.title)}</button>`).join('')+'</div>';
+  p.innerHTML=html;
+}
+function renderWorkspaces(list,active){
+  const p=$('workspaceList'); if(!list.length){p.innerHTML='';return;}
+  p.innerHTML='<div style="color:var(--text-tertiary);font-size:10px;margin-bottom:4px">最近打开</div>'+list.slice(0,6).map(w=>`<button onclick="openExistingWorkspace('${esc(w.path)}')" style="display:block;width:100%;text-align:left;padding:5px 7px;margin-bottom:3px;border:1px solid ${w.id===active?'var(--accent)':'var(--border-subtle)'};border-radius:5px;background:transparent;color:var(--text-secondary);cursor:pointer;font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(w.path)}">${esc(w.name)}</button>`).join('');
+}
+async function openExistingWorkspace(path){ $('workspaceInput').value=path; await setWorkspace(); }
+async function newSession(){
+  const title=prompt('会话名称（可选）','新会话'); if(title===null)return;
+  const r=await fetch('/api/sessions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title})}); const d=await r.json();
+  if(d.error){toast(d.error);return;} resetChatView(); loadWorkspace();
+}
+async function useSession(id){
+  const r=await fetch('/api/sessions/'+encodeURIComponent(id)+'/use',{method:'POST'}); const d=await r.json();
+  if(d.error){toast(d.error);return;} resetChatView(); loadWorkspace();
+}
+function resetChatView(){ $('msgList').innerHTML=''; $('msgList').style.display='none'; $('welcome').style.display=''; }
 
 // ============================================================
 // Resize handles
@@ -1083,6 +1166,7 @@ function togglePreview(){
   const preview=$('rightPreview');
   preview.classList.toggle('open',previewOn);
   $('rightResize').style.display=previewOn?'':'none';
+  if(previewOn && previewUrl)loadWorkspacePreview();
   localStorage.setItem('previewOpen',previewOn);
 }
 function togglePreviewFullscreen(){
@@ -1131,7 +1215,15 @@ $('btnSidebarToggle').onclick=toggleSidebar;
 $('btnSidebarToggleMain').onclick=toggleSidebar;
 $('btnPreviewToggle').onclick=togglePreview;
 $('btnPreviewFullscreen').onclick=togglePreviewFullscreen;
+$('previewBack').onclick=()=>previewHistory('back');
+$('previewForward').onclick=()=>previewHistory('forward');
+$('previewReload').onclick=()=>{try{$('previewFrame').contentWindow.location.reload();}catch(e){$('previewFrame').src=previewUrl;}};
+$('previewHome').onclick=()=>navigatePreview('/api/preview/index.html');
+$('previewGo').onclick=()=>navigatePreview($('previewAddress').value);
+$('previewAddress').addEventListener('keydown',e=>{if(e.key==='Enter')navigatePreview(e.target.value);});
 $('btnSetWorkspace').onclick=setWorkspace;
+if($('btnPickWorkspace')) $('btnPickWorkspace').onclick=pickWorkspace;
+if($('btnRevealWorkspace')) $('btnRevealWorkspace').onclick=revealWorkspace;
 
 applyI18n();refresh();
 </script>

@@ -10,9 +10,39 @@ use std::process::{Child, Command};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+use tauri::Manager;
+
 const BACKEND_ADDR: &str = "127.0.0.1:5510";
 
 struct Backend(Mutex<Option<Child>>);
+
+#[tauri::command]
+async fn pick_folder() -> Option<String> {
+    rfd::AsyncFileDialog::new()
+        .set_title("打开工作文件夹")
+        .pick_folder()
+        .await
+        .map(|handle| handle.path().to_string_lossy().to_string())
+}
+
+#[tauri::command]
+fn reveal_folder(path: String) -> Result<(), String> {
+    let folder = PathBuf::from(path);
+    if !folder.is_dir() { return Err("文件夹不存在或不可用".into()); }
+    #[cfg(target_os = "windows")]
+    {
+        Command::new("explorer.exe").arg(&folder).spawn().map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open").arg(&folder).spawn().map_err(|e| e.to_string())?;
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        Command::new("xdg-open").arg(&folder).spawn().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
 
 /// 依次在常见位置查找 Go 后端可执行文件。
 fn find_backend() -> Option<PathBuf> {
@@ -60,10 +90,12 @@ fn main() {
 
     tauri::Builder::default()
         .manage(Backend(Mutex::new(child)))
+        .invoke_handler(tauri::generate_handler![pick_folder, reveal_folder])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::Destroyed = event {
                 let state: tauri::State<Backend> = window.state();
-                if let Some(mut c) = state.0.lock().unwrap().take() {
+                let child: Option<Child> = state.0.lock().unwrap().take();
+                if let Some(mut c) = child {
                     let _ = c.kill();
                 }
             }

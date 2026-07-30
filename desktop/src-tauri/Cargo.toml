@@ -9,6 +9,7 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = [] }
+rfd = "0.15"
 
 [profile.release]
 strip = true
