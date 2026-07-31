@@ -51,6 +51,9 @@ func (e *ToolExecutor) Definitions() []llm.Tool {
 			"path":    map[string]any{"type": "string", "description": "相对工作空间文件路径"},
 			"content": map[string]any{"type": "string", "description": "要写入的完整文本内容"},
 		})}},
+		{Type: "function", Function: llm.FunctionDefinition{Name: "preview_file", Description: "在内置浏览器中打开工作空间内的 HTML 文件进行预览。用户要求打开、预览或查看项目页面时必须调用此工具，而不是只给出手动操作说明。", Parameters: objectSchema(map[string]any{
+			"path": map[string]any{"type": "string", "description": "工作空间内 HTML 文件的相对路径，例如 index.html 或 src/index.html"},
+		})}},
 		{Type: "function", Function: llm.FunctionDefinition{Name: "load_skill", Description: "按需加载一个技能的完整 SKILL.md 正文。先查看可用技能名称，再按需调用。", Parameters: objectSchema(map[string]any{
 			"name": map[string]any{"type": "string", "description": "技能名称"},
 		})}},
@@ -89,6 +92,9 @@ func (e *ToolExecutor) Execute(name, raw string) (string, error) {
 		path, _ := args["path"].(string)
 		content, _ := args["content"].(string)
 		return e.write(path, content)
+	case "preview_file":
+		path, _ := args["path"].(string)
+		return e.preview(path)
 	case "load_skill":
 		name, _ := args["name"].(string)
 		for _, s := range e.Skills {
@@ -185,4 +191,23 @@ func (e *ToolExecutor) write(path, content string) (string, error) {
 		return "", err
 	}
 	return fmt.Sprintf("已写入 %d 字节到 %s", len(content), filepath.ToSlash(path)), nil
+}
+
+func (e *ToolExecutor) preview(path string) (string, error) {
+	file, err := e.resolve(path)
+	if err != nil {
+		return "", err
+	}
+	info, err := os.Stat(file)
+	if err != nil {
+		return "", err
+	}
+	if info.IsDir() {
+		return "", errors.New("预览目标不是文件")
+	}
+	ext := strings.ToLower(filepath.Ext(file))
+	if ext != ".html" && ext != ".htm" {
+		return "", errors.New("preview_file 只支持 HTML 文件")
+	}
+	return fmt.Sprintf("已在内置浏览器中打开 %s", filepath.ToSlash(path)), nil
 }

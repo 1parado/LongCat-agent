@@ -5,7 +5,8 @@
   "identifier": "com.longcatfrontend.desktop",
   "build": {
     "frontendDist": "http://127.0.0.1:5510",
-    "devUrl": "http://127.0.0.1:5510"
+    "devUrl": "http://127.0.0.1:5510",
+    "beforeDevCommand": "..\\bin\\LongCat-frontend.exe serve -addr 127.0.0.1:5510"
   },
   "app": {
     "withGlobalTauri": true,

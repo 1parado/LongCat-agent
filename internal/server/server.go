@@ -384,8 +384,10 @@ func (a *api) chat(w http.ResponseWriter, r *http.Request) {
 		a.cancel = nil
 		a.cancelMu.Unlock()
 	}()
-	_, err := a.session.Ask(ctx, in.Message, func(delta string) {
+	_, err := a.session.AskWithEvents(ctx, in.Message, func(delta string) {
 		send("delta", delta)
+	}, func(event agent.ToolEvent) {
+		send("tool", event)
 	})
 	if err != nil {
 		if errors.Is(err, context.Canceled) {

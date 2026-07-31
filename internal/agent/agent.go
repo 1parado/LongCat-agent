@@ -37,7 +37,10 @@ const systemPrompt = `你是 LongCat —— 一个智能、高效、全能的 AI
 - 解释关键概念和设计决策
 - 指出潜在问题和优化方向
 - 提供相关资源和扩展阅读
-- 在必要时提供多种解决方案供选择`
+- 在必要时提供多种解决方案供选择
+
+## 内置浏览器
+- 当用户要求打开、预览或查看当前工作空间中的 HTML 页面时，必须调用 preview_file 工具，让桌面端内置浏览器打开页面；不要声称没有浏览器，也不要只给出手动打开文件的说明。`
 
 // Session 一次对话会话。
 type Session struct {
@@ -52,6 +55,20 @@ type Session struct {
 	// Workspace 当前工作空间路径，空表示无工作空间。
 	Workspace string
 }
+
+// ToolEvent describes one tool invocation for clients that want to render the
+// agent's progress. Result is populated after execution completes.
+type ToolEvent struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Arguments string `json:"arguments,omitempty"`
+	Result    string `json:"result,omitempty"`
+	Status    string `json:"status"` // running, success, error
+	Round     int    `json:"round,omitempty"`
+}
+
+// ToolEventFunc receives tool lifecycle updates.
+type ToolEventFunc func(ToolEvent)
 
 // modeDesc 模式到提示词片段的映射。
 var modeDesc = map[string]string{
@@ -160,6 +177,11 @@ func (s *Session) MatchedSkills(userInput string) []string {
 
 // Ask 发送用户消息，onDelta 流式回调，返回完整回复并记入历史。
 func (s *Session) Ask(ctx context.Context, input string, onDelta llm.StreamFunc) (string, error) {
+	return s.AskWithEvents(ctx, input, onDelta, nil)
+}
+
+// AskWithEvents is Ask with optional tool lifecycle notifications.
+func (s *Session) AskWithEvents(ctx context.Context, input string, onDelta llm.StreamFunc, onTool ToolEventFunc) (string, error) {
 	provider, err := s.Manager.Active()
 	if err != nil {
 		return "", err
@@ -189,14 +211,26 @@ func (s *Session) Ask(ctx context.Context, input string, onDelta llm.StreamFunc)
 		// Preserve the assistant tool-call turn, then append one tool result per call.
 		assistant := llm.Message{Role: "assistant", Content: result.Content, ToolCalls: result.ToolCalls}
 		msgs = append(msgs, assistant)
-		for _, call := range result.ToolCalls {
+		for index, call := range result.ToolCalls {
 			if err := ctx.Err(); err != nil {
 				s.commitInterrupted(input, reply)
 				return reply, err
 			}
+			callID := call.ID
+			if callID == "" {
+				callID = fmt.Sprintf("tool-%d-%d", round, index)
+			}
+			if onTool != nil {
+				onTool(ToolEvent{ID: callID, Name: call.Function.Name, Arguments: call.Function.Arguments, Status: "running", Round: round + 1})
+			}
 			out, callErr := exec.Execute(call.Function.Name, call.Function.Arguments)
+			status := "success"
 			if callErr != nil {
 				out = "工具执行失败: " + callErr.Error()
+				status = "error"
+			}
+			if onTool != nil {
+				onTool(ToolEvent{ID: callID, Name: call.Function.Name, Arguments: call.Function.Arguments, Result: out, Status: status, Round: round + 1})
 			}
 			msgs = append(msgs, llm.Message{Role: "tool", Content: out, ToolCallID: call.ID, Name: call.Function.Name})
 		}

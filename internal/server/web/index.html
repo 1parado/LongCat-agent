@@ -186,6 +186,25 @@ body{font-family:var(--font-sans);font-size:var(--text-sm);color:var(--text-prim
 .skill-tags{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:6px}
 .st-tag{font-size:10.5px;color:var(--longcat);border:1px solid color-mix(in srgb,var(--longcat) 30%,transparent);
   border-radius:var(--radius-full);padding:1px 8px;background:color-mix(in srgb,var(--longcat) 7%,transparent)}
+/* Tool calls: compact progress cards, collapsed until the user asks for detail. */
+.tool-trace{display:flex;flex-direction:column;gap:5px;margin:0 0 10px;max-width:100%}
+.tool-call{border:1px solid var(--border-subtle);border-radius:var(--radius-md);background:color-mix(in srgb,var(--bg-elevated) 72%,transparent);overflow:hidden}
+.tool-call[open]{border-color:var(--border-strong)}
+.tool-call summary{display:flex;align-items:center;gap:8px;min-height:31px;padding:6px 9px;cursor:pointer;list-style:none;color:var(--text-secondary);font-size:11px;user-select:none}
+.tool-call summary::-webkit-details-marker{display:none}
+.tool-call summary::before{content:'›';width:12px;color:var(--text-tertiary);font-size:16px;line-height:1;text-align:center;transition:transform var(--motion-fast)}
+.tool-call[open] summary::before{transform:rotate(90deg)}
+.tool-call-name{font-family:var(--font-mono);color:var(--text-primary);font-size:11px}
+.tool-call-status{margin-left:auto;display:inline-flex;align-items:center;gap:5px;color:var(--text-tertiary);white-space:nowrap}
+.tool-call-status::before{content:'';width:6px;height:6px;border-radius:var(--radius-full);background:currentColor}
+.tool-call-status.running{color:var(--warning)}
+.tool-call-status.success{color:var(--success)}
+.tool-call-status.error{color:var(--danger)}
+.tool-call-body{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;padding:0 9px 9px}
+.tool-call-section{min-width:0}
+.tool-call-label{display:block;margin:0 0 4px;color:var(--text-tertiary);font-size:10px}
+.tool-call pre{margin:0;max-height:220px;overflow:auto;padding:8px;background:var(--bg-code);border:1px solid var(--border-subtle);border-radius:var(--radius-sm);color:var(--text-secondary);font:10.5px/1.5 var(--font-mono);white-space:pre-wrap;word-break:break-word}
+@media(max-width:640px){.tool-call-body{grid-template-columns:1fr}}
 
 /* ---- Composer ---- */
 .composer-wrap{padding:0 32px 14px;flex-shrink:0;display:flex;flex-direction:column;align-items:center}
@@ -555,6 +574,7 @@ toggleTheme:'切换主题',preview:'预览',settings:'设置',
   clearBtn:'清空',saveBtn:'保存',copyBtn:'复制',copiedBtn:'已复制',
   msgYou:'你',msgAgent:'LongCat',
   thinking:'思考中…',sessionReset:'会话已重置',
+  toolRunning:'执行中',toolSuccess:'已完成',toolError:'失败',toolArguments:'参数',toolResult:'结果',
   noProviders:'暂无供应商，点 ⚙ 添加',
   confirmDelete:'删除供应商 {id}？',
   toastSaved:'已保存',toastDeleted:'已删除',toastSwitched:'已切换到 {id}',
@@ -580,6 +600,7 @@ toggleTheme:'Toggle theme',preview:'Preview',settings:'Settings',
   clearBtn:'Clear',saveBtn:'Save',copyBtn:'Copy',copiedBtn:'Copied',
   msgYou:'You',msgAgent:'LongCat',
   thinking:'Thinking…',sessionReset:'Session reset',
+  toolRunning:'Running',toolSuccess:'Completed',toolError:'Failed',toolArguments:'Arguments',toolResult:'Result',
   noProviders:'No providers. Click ⚙ to add.',
   confirmDelete:'Delete provider {id}?',
   toastSaved:'Saved',toastDeleted:'Deleted',toastSwitched:'Switched to {id}',
@@ -711,9 +732,50 @@ function addMsg(role){
   }else{
     el.innerHTML=`<div class="msg-head"><div class="msg-avatar">${catAvatar}</div>
       <span class="msg-who">${t('msgAgent')}</span></div>
-      <div class="skill-tags"></div><div class="msg-body"></div>`;
+      <div class="skill-tags"></div><div class="tool-trace" aria-live="polite"></div><div class="msg-body"></div>`;
   }
   $('msgList').appendChild(el);return el;
+}
+function formatToolPayload(value){
+  if(value===undefined||value===null||value==='')return '—';
+  try{return JSON.stringify(typeof value==='string'?JSON.parse(value):value,null,2);}
+  catch(e){return String(value);}
+}
+function toolStatusText(status){
+  return status==='running'?t('toolRunning'):status==='error'?t('toolError'):t('toolSuccess');
+}
+function renderToolEvent(msg,event){
+  const trace=msg.querySelector('.tool-trace');
+  if(!trace||!event)return;
+  const id=String(event.id||`tool-${trace.children.length+1}`);
+  let card=[...trace.querySelectorAll('.tool-call')].find(el=>el.dataset.toolId===id);
+  if(!card){
+    card=document.createElement('details');
+    card.className='tool-call';
+    card.dataset.toolId=id;
+    card.innerHTML=`<summary><span class="tool-call-name"></span><span class="tool-call-status"></span></summary>
+      <div class="tool-call-body">
+        <div class="tool-call-section"><span class="tool-call-label">${esc(t('toolArguments'))}</span><pre class="tool-call-arguments"></pre></div>
+        <div class="tool-call-section"><span class="tool-call-label">${esc(t('toolResult'))}</span><pre class="tool-call-result"></pre></div>
+      </div>`;
+    trace.appendChild(card);
+  }
+  card.querySelector('.tool-call-name').textContent=event.name||'tool';
+  const status=event.status||'success';
+  const statusEl=card.querySelector('.tool-call-status');
+  statusEl.className=`tool-call-status ${status}`;
+  statusEl.textContent=toolStatusText(status);
+  card.querySelector('.tool-call-arguments').textContent=formatToolPayload(event.arguments);
+  if(event.result!==undefined)card.querySelector('.tool-call-result').textContent=formatToolPayload(event.result);
+  if(event.name==='preview_file'&&status==='success'){
+    try{
+      const args=typeof event.arguments==='string'?JSON.parse(event.arguments):event.arguments;
+      if(args?.path){
+        if(!previewOn)togglePreview();
+        navigatePreview(args.path);
+      }
+    }catch(e){/* malformed tool arguments are already shown in the card */}
+  }
 }
 function renderMd(el,text){
   const parts=text.split('```');let html='';
@@ -768,6 +830,7 @@ async function send(){
           scrollBottom();}
         else if(ev==='skills'){a.querySelector('.skill-tags').innerHTML=
           data.map(n=>`<span class="st-tag">◆ ${esc(n)}</span>`).join('');}
+        else if(ev==='tool'){renderToolEvent(a,data);scrollBottom();}
         else if(ev==='error'){body.innerHTML=`<span style="color:var(--danger)">${t('errorPrefix')}${esc(data)}</span>`;}
         else if(ev==='stopped'){body.innerHTML+='<div style="color:var(--text-tertiary);font-size:11px">已中断</div>';}
       }
@@ -799,10 +862,12 @@ function normalizePreviewUrl(raw){
 }
 function navigatePreview(raw){
   const input=String(raw||'').trim();
-  if(!input){ previewUrl=''; $('previewAddress').value=''; $('previewFrame').src=''; $('previewFrame').srcdoc=''; return; }
+  if(!input){ previewUrl=''; $('previewAddress').value=''; $('previewFrame').removeAttribute('srcdoc'); $('previewFrame').src=''; return; }
   previewUrl=normalizePreviewUrl(input);
   $('previewAddress').value=input;
-  $('previewFrame').srcdoc='';
+  // An empty srcdoc attribute is still a valid document and takes precedence
+  // over src in browsers. Remove it completely before loading a workspace URL.
+  $('previewFrame').removeAttribute('srcdoc');
   $('previewFrame').src=previewUrl;
 }
 function loadWorkspacePreview(){
