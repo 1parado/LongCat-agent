@@ -72,6 +72,17 @@ body{font-family:var(--font-sans);font-size:var(--text-sm);color:var(--text-prim
 
 /* ============ Layout: 左栏 + 主区（近黑三栏骨架） ============ */
 .app{display:flex;height:100vh}
+.app{position:relative;z-index:1;background:transparent}
+.wallpaper-layer{position:fixed;inset:0;z-index:0;overflow:hidden;display:none;pointer-events:none;background:var(--bg-app)}
+.wallpaper-layer.active{display:block}
+.wallpaper-media{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center;display:none}
+.wallpaper-media.active{display:block}
+.wallpaper-scrim{position:absolute;inset:0;background:linear-gradient(105deg,color-mix(in srgb,var(--bg-app) 88%,transparent) 0%,color-mix(in srgb,var(--bg-app) 62%,transparent) 42%,color-mix(in srgb,var(--bg-app) 24%,transparent) 100%);opacity:var(--wallpaper-scrim-opacity,.58);transition:opacity var(--motion-normal)}
+html[data-wallpaper="1"] .app{background:transparent}
+html[data-wallpaper="1"] .sidebar{background:color-mix(in srgb,var(--bg-sidebar) var(--wallpaper-pane-mix,72%),transparent)!important;backdrop-filter:blur(var(--wallpaper-blur,18px)) saturate(1.2);-webkit-backdrop-filter:blur(var(--wallpaper-blur,18px)) saturate(1.2)}
+html[data-wallpaper="1"] .main{background:color-mix(in srgb,var(--bg-main) var(--wallpaper-pane-mix,72%),transparent)!important;box-shadow:none}
+html[data-wallpaper="1"] .preview-pane{background:color-mix(in srgb,var(--bg-sidebar) var(--wallpaper-pane-mix,72%),transparent)!important;backdrop-filter:blur(var(--wallpaper-blur,18px));-webkit-backdrop-filter:blur(var(--wallpaper-blur,18px))}
+html[data-wallpaper="1"] .composer{background:color-mix(in srgb,var(--bg-input) 88%,transparent)}
 
 /* ---- Sidebar ---- */
 .sidebar{width:var(--sidebar-width);min-width:var(--sidebar-width);background:var(--bg-sidebar);
@@ -341,6 +352,14 @@ body{font-family:var(--font-sans);font-size:var(--text-sm);color:var(--text-prim
   backdrop-filter:blur(var(--glass-blur)) saturate(var(--glass-saturate));
   -webkit-backdrop-filter:blur(var(--glass-blur)) saturate(var(--glass-saturate));
   border-radius:16px;padding:20px 24px;box-shadow:var(--glass-shadow);animation:fade .18s ease}
+.wallpaper-modal{width:min(620px,calc(100vw - 32px));padding:18px 20px}
+.wallpaper-preview{position:relative;height:190px;overflow:hidden;border:1px solid var(--border-strong);border-radius:var(--radius-lg);background:radial-gradient(circle at 30% 20%,color-mix(in srgb,var(--accent) 30%,transparent),transparent 48%),var(--bg-code);display:flex;align-items:center;justify-content:center;margin-bottom:14px}
+.wallpaper-preview img,.wallpaper-preview video{width:100%;height:100%;object-fit:cover;display:none}.wallpaper-preview img.active,.wallpaper-preview video.active{display:block}
+.wallpaper-preview::after{content:'';position:absolute;inset:0;pointer-events:none;background:linear-gradient(105deg,rgba(0,0,0,.52),rgba(0,0,0,.08));opacity:var(--wallpaper-preview-scrim,.58)}
+.wallpaper-preview-empty{position:absolute;z-index:1;color:var(--text-tertiary);font-size:12px;text-align:center}.wallpaper-preview.has-media .wallpaper-preview-empty{display:none}
+.wallpaper-file-row{display:flex;align-items:center;gap:8px;min-height:26px;margin-bottom:12px}.wallpaper-file-name{min-width:0;flex:1;color:var(--text-secondary);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.wallpaper-file-meta{color:var(--text-tertiary);font-size:10px;white-space:nowrap}
+.wallpaper-actions{display:flex;align-items:center;gap:7px}.wallpaper-actions .btn{height:30px}.wallpaper-actions .btn-danger{color:var(--danger);border-color:var(--danger-muted);background:var(--danger-muted)}
+.wallpaper-control{padding:12px 0 2px;border-top:1px solid var(--border-subtle);margin-top:14px}.wallpaper-control-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;color:var(--text-secondary);font-size:11px}.wallpaper-control-value{color:var(--accent-hover);font-variant-numeric:tabular-nums}.wallpaper-range{width:100%;accent-color:var(--accent);cursor:pointer}.wallpaper-hint{color:var(--text-tertiary);font-size:10px;line-height:1.5;margin-top:10px}
 .modal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
 .modal-head h2{font-size:var(--text-lg);font-weight:600}
 
@@ -456,6 +475,12 @@ body{font-family:var(--font-sans);font-size:var(--text-sm);color:var(--text-prim
   </symbol>
 </svg>
 
+<div class="wallpaper-layer" id="wallpaperLayer" aria-hidden="true">
+  <img class="wallpaper-media" id="wallpaperImage" alt="">
+  <video class="wallpaper-media" id="wallpaperVideo" muted loop playsinline></video>
+  <div class="wallpaper-scrim"></div>
+</div>
+
 <div class="app">
 
 <!-- ========== Sidebar ========== -->
@@ -515,6 +540,7 @@ body{font-family:var(--font-sans);font-size:var(--text-sm);color:var(--text-prim
     <button class="icon-btn" id="btnSidebarToggleMain" title="切换侧栏" style="display:none">◧</button>
     <div style="flex:1"></div>
     <button class="icon-btn" id="btnTheme" data-i18n-title="toggleTheme" title="切换主题">◐</button>
+    <button class="icon-btn" id="btnWallpaper" data-i18n-title="wallpaper" title="背景">▧</button>
     <button class="icon-btn" id="btnPreviewToggle" data-i18n-title="preview" title="预览">▤</button>
     <button class="icon-btn" id="btnSkillsView" title="Skills 市场">◆</button>
   </div>
@@ -626,6 +652,43 @@ body{font-family:var(--font-sans);font-size:var(--text-sm);color:var(--text-prim
   </div>
 </div>
 
+<!-- ========== Wallpaper Modal ========== -->
+<div class="overlay" id="wallpaperOverlay">
+  <div class="modal wallpaper-modal">
+    <div class="modal-head">
+      <h2 data-i18n="wallpaperTitle">背景</h2>
+      <button class="icon-btn" id="btnCloseWallpaper" title="关闭">✕</button>
+    </div>
+    <div class="wallpaper-preview" id="wallpaperPreview">
+      <img id="wallpaperPreviewImage" alt="">
+      <video id="wallpaperPreviewVideo" muted loop playsinline></video>
+      <div class="wallpaper-preview-empty" data-i18n="wallpaperEmpty">选择一张图片或视频，让工作台拥有自己的气氛</div>
+    </div>
+    <div class="wallpaper-file-row">
+      <span class="wallpaper-file-name" id="wallpaperFileName" data-i18n="wallpaperNone">尚未设置壁纸</span>
+      <span class="wallpaper-file-meta" id="wallpaperFileMeta"></span>
+    </div>
+    <div class="wallpaper-actions">
+      <input id="wallpaperInput" type="file" hidden accept="image/*,video/*">
+      <button class="btn btn-primary" id="btnChooseWallpaper" data-i18n="chooseWallpaper">选择壁纸</button>
+      <button class="btn btn-danger" id="btnClearWallpaper" data-i18n="clearWallpaper">恢复默认</button>
+    </div>
+    <div class="wallpaper-control">
+      <div class="wallpaper-control-head"><span data-i18n="wallpaperScrim">可读性遮罩</span><span class="wallpaper-control-value" id="wallpaperScrimValue">58%</span></div>
+      <input class="wallpaper-range" id="wallpaperScrim" type="range" min="0" max="0.9" step="0.01" value="0.58">
+    </div>
+    <div class="wallpaper-control">
+      <div class="wallpaper-control-head"><span data-i18n="wallpaperPane">面板不透明度</span><span class="wallpaper-control-value" id="wallpaperPaneValue">72%</span></div>
+      <input class="wallpaper-range" id="wallpaperPane" type="range" min="0.3" max="1" step="0.01" value="0.72">
+    </div>
+    <div class="wallpaper-control">
+      <div class="wallpaper-control-head"><span data-i18n="wallpaperBlur">侧栏与预览模糊</span><span class="wallpaper-control-value" id="wallpaperBlurValue">18px</span></div>
+      <input class="wallpaper-range" id="wallpaperBlur" type="range" min="0" max="32" step="1" value="18">
+    </div>
+    <div class="wallpaper-hint" data-i18n="wallpaperHint">壁纸只保存在本机应用数据中，不会上传到模型服务。图片、GIF 和静音循环视频均可使用。</div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -642,6 +705,7 @@ const I18N={
   welcomeTitle:'今天想做什么？',
   inputPlaceholder:'描述你的问题、需求或想法…',
   inputHint:'Enter 发送 · Shift+Enter 换行',
+  wallpaper:'背景',wallpaperTitle:'背景',wallpaperEmpty:'选择一张图片或视频，让工作台拥有自己的气氛',wallpaperNone:'尚未设置壁纸',chooseWallpaper:'选择壁纸',clearWallpaper:'恢复默认',wallpaperScrim:'可读性遮罩',wallpaperPane:'面板不透明度',wallpaperBlur:'侧栏与预览模糊',wallpaperHint:'壁纸只保存在本机应用数据中，不会上传到模型服务。图片、GIF 和静音循环视频均可使用。',wallpaperTooLarge:'壁纸不能超过 40 MB',wallpaperUnsupported:'请选择图片或视频文件',
   attachFiles:'上传文件',removeAttachment:'移除附件',
   fileTooLarge:'文件过大（单个不超过 15 MB）',attachmentsTooMany:'最多上传 10 个文件',
   attachmentsTotalTooLarge:'附件总大小不能超过 48 MB',
@@ -671,6 +735,7 @@ toggleTheme:'切换主题',preview:'预览',settings:'设置',
   welcomeTitle:'What can I help you with today?',
   inputPlaceholder:'Describe your problem, requirement or idea…',
   inputHint:'Enter to send · Shift+Enter for newline',
+  wallpaper:'Wallpaper',wallpaperTitle:'Custom wallpaper',wallpaperEmpty:'Choose an image or video to give the workbench its own atmosphere',wallpaperNone:'No wallpaper selected',chooseWallpaper:'Choose wallpaper',clearWallpaper:'Reset to default',wallpaperScrim:'Readability scrim',wallpaperPane:'Pane opacity',wallpaperBlur:'Sidebar and preview blur',wallpaperHint:'The wallpaper stays in this app’s local data and is never uploaded to a model service. Images, GIFs and muted looping videos are supported.',wallpaperTooLarge:'Wallpaper must be 40 MB or smaller',wallpaperUnsupported:'Choose an image or video file',
   attachFiles:'Upload files',removeAttachment:'Remove attachment',
   fileTooLarge:'File is too large (15 MB max)',attachmentsTooMany:'Up to 10 files',
   attachmentsTotalTooLarge:'Attachments must be 48 MB or less in total',
@@ -725,13 +790,57 @@ function toast(m){const el=$('toast');el.textContent=m;el.classList.add('show');
 const catAvatar='<svg><use href="#longcat"/></svg>';
 
 // ============================================================
+// Wallpaper — media in IndexedDB, small preferences in localStorage
+// ============================================================
+const WALLPAPER_DB='longcat-frontend-wallpaper';
+const WALLPAPER_STORE='media';
+const WALLPAPER_META_KEY='wallpaperMeta';
+const WALLPAPER_PREF_KEY='wallpaperPrefs';
+const MAX_WALLPAPER_BYTES=40*1024*1024;
+let wallpaperDBPromise=null;
+let wallpaperState={meta:null,url:'',prefs:{scrim:.58,pane:.72,blur:18}};
+function wallpaperDB(){
+  if(wallpaperDBPromise)return wallpaperDBPromise;
+  wallpaperDBPromise=new Promise((resolve,reject)=>{
+    if(!window.indexedDB){reject(new Error('IndexedDB unavailable'));return;}
+    const req=indexedDB.open(WALLPAPER_DB,1);
+    req.onupgradeneeded=()=>{if(!req.result.objectStoreNames.contains(WALLPAPER_STORE))req.result.createObjectStore(WALLPAPER_STORE);};
+    req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error||new Error('IndexedDB unavailable'));
+  });
+  return wallpaperDBPromise;
+}
+function wallpaperGet(){return wallpaperDB().then(db=>new Promise((resolve,reject)=>{const req=db.transaction(WALLPAPER_STORE,'readonly').objectStore(WALLPAPER_STORE).get('current');req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error||new Error('wallpaper read failed'));}));}
+function wallpaperSave(blob){return wallpaperDB().then(db=>new Promise((resolve,reject)=>{const req=db.transaction(WALLPAPER_STORE,'readwrite').objectStore(WALLPAPER_STORE).put(blob,'current');req.onsuccess=()=>resolve();req.onerror=()=>reject(req.error||new Error('wallpaper save failed'));}));}
+function wallpaperDelete(){return wallpaperDB().then(db=>new Promise((resolve,reject)=>{const tx=db.transaction(WALLPAPER_STORE,'readwrite'),req=tx.objectStore(WALLPAPER_STORE).delete('current');req.onsuccess=()=>resolve();req.onerror=()=>reject(req.error||new Error('wallpaper delete failed'));}));}
+function wallpaperKind(meta){return /^video\//i.test(meta?.type||'')||/\.(mp4|webm|mov|m4v|ogv|avi)$/i.test(meta?.name||'')?'video':'image';}
+function loadWallpaperPrefs(){try{const raw=JSON.parse(localStorage.getItem(WALLPAPER_PREF_KEY)||'{}');wallpaperState.prefs={scrim:Number.isFinite(+raw.scrim)?Math.max(0,Math.min(.9,+raw.scrim)):.58,pane:Number.isFinite(+raw.pane)?Math.max(.3,Math.min(1,+raw.pane)):.72,blur:Number.isFinite(+raw.blur)?Math.max(0,Math.min(32,+raw.blur)):18};}catch(e){}applyWallpaperPrefs();}
+function applyWallpaperPrefs(){const p=wallpaperState.prefs,d=document.documentElement;d.style.setProperty('--wallpaper-scrim-opacity',p.scrim);d.style.setProperty('--wallpaper-pane-mix',Math.round(p.pane*100)+'%');d.style.setProperty('--wallpaper-blur',p.blur+'px');if($('wallpaperScrim')){$('wallpaperScrim').value=p.scrim;$('wallpaperPane').value=p.pane;$('wallpaperBlur').value=p.blur;$('wallpaperScrimValue').textContent=Math.round(p.scrim*100)+'%';$('wallpaperPaneValue').textContent=Math.round(p.pane*100)+'%';$('wallpaperBlurValue').textContent=p.blur+'px';$('wallpaperPreview').style.setProperty('--wallpaper-preview-scrim',p.scrim);}}
+function saveWallpaperPrefs(){localStorage.setItem(WALLPAPER_PREF_KEY,JSON.stringify(wallpaperState.prefs));applyWallpaperPrefs();}
+function readWallpaperMeta(){try{return JSON.parse(localStorage.getItem(WALLPAPER_META_KEY)||'null');}catch(e){return null;}}
+function wallpaperMediaReady(){const meta=wallpaperState.meta,layer=$('wallpaperLayer'),image=$('wallpaperImage'),video=$('wallpaperVideo'),preview=$('wallpaperPreview'),previewImage=$('wallpaperPreviewImage'),previewVideo=$('wallpaperPreviewVideo');
+  document.documentElement.dataset.wallpaper=meta?'1':'0';layer.classList.toggle('active',!!meta&&!!wallpaperState.url);preview.classList.toggle('has-media',!!meta&&!!wallpaperState.url);
+  [image,video,previewImage,previewVideo].forEach(el=>{el.classList.remove('active');if(el.tagName==='VIDEO'){el.pause();el.removeAttribute('src');el.load();}else el.removeAttribute('src');});
+  if(!meta||!wallpaperState.url){$('wallpaperFileName').textContent=t('wallpaperNone');$('wallpaperFileMeta').textContent='';return;}
+  const isVideo=wallpaperKind(meta)==='video';
+  [isVideo?video:image,isVideo?previewVideo:previewImage].forEach(el=>{el.src=wallpaperState.url;el.classList.add('active');if(el.tagName==='VIDEO'){el.load();el.play().catch(()=>{});}});
+  $('wallpaperFileName').textContent=meta.name||t('wallpaperTitle');$('wallpaperFileName').title=meta.name||'';$('wallpaperFileMeta').textContent=[meta.type,meta.size?formatBytes(meta.size):''].filter(Boolean).join(' · ');
+}
+async function setWallpaperBlob(blob,meta){if(wallpaperState.url)URL.revokeObjectURL(wallpaperState.url);wallpaperState.url=URL.createObjectURL(blob);wallpaperState.meta=meta;localStorage.setItem(WALLPAPER_META_KEY,JSON.stringify(meta));wallpaperMediaReady();}
+async function restoreWallpaper(){loadWallpaperPrefs();const meta=readWallpaperMeta();if(!meta)return;try{const blob=await wallpaperGet();if(blob)await setWallpaperBlob(blob,meta);else localStorage.removeItem(WALLPAPER_META_KEY);}catch(e){localStorage.removeItem(WALLPAPER_META_KEY);}}
+async function chooseWallpaper(file){if(!file)return;if(file.size>MAX_WALLPAPER_BYTES){toast(t('wallpaperTooLarge'));return;}if(!/^image\//i.test(file.type)&&!/^video\//i.test(file.type)&&!wallpaperKind(file)){toast(t('wallpaperUnsupported'));return;}try{await wallpaperSave(file);await setWallpaperBlob(file,{name:file.name,type:file.type||'application/octet-stream',size:file.size,updatedAt:Date.now()});toast(t('chooseWallpaper'));}catch(e){toast(t('errorPrefix')+String(e.message||e));}}
+async function clearWallpaper(){if(wallpaperState.url)URL.revokeObjectURL(wallpaperState.url);wallpaperState.url='';wallpaperState.meta=null;localStorage.removeItem(WALLPAPER_META_KEY);try{await wallpaperDelete();}catch(e){}wallpaperMediaReady();toast(t('clearWallpaper'));}
+function openWallpaper(){applyWallpaperPrefs();$('wallpaperOverlay').classList.add('open');}
+function closeWallpaper(){$('wallpaperOverlay').classList.remove('open');}
+
+// ============================================================
 // Render
 // ============================================================
 function renderNav(){
   $('sbNav').innerHTML=[
     {icon:'◈',key:'navChat',active:true},
     {icon:'◆',key:'navSkills',onclick:'openSkillsPane()'},
-    {icon:'⚙',key:'navProviders',onclick:'openModal()'}
+    {icon:'⚙',key:'navProviders',onclick:'openModal()'},
+    {icon:'▧',key:'wallpaper',onclick:'openWallpaper()'}
   ].map(n=>`<button class="nav-item${n.active?' active':''}" ${n.onclick?`onclick="${n.onclick}"`:''}>
     <span class="ni">${n.icon}</span>${t(n.key)}</button>`).join('');
 }
@@ -1113,6 +1222,13 @@ function previewHistory(method){
 // ============================================================
 function openModal(){resetForm();$('overlay').classList.add('open');}
 function closeModal(){$('overlay').classList.remove('open');}
+$('btnWallpaper').onclick=openWallpaper;
+$('btnCloseWallpaper').onclick=closeWallpaper;
+$('btnChooseWallpaper').onclick=()=>$('wallpaperInput').click();
+$('wallpaperInput').onchange=e=>{const file=e.target.files?.[0];chooseWallpaper(file);e.target.value='';};
+$('btnClearWallpaper').onclick=clearWallpaper;
+$('wallpaperOverlay').onclick=e=>{if(e.target===$('wallpaperOverlay'))closeWallpaper();};
+[['wallpaperScrim','scrim'],['wallpaperPane','pane'],['wallpaperBlur','blur']].forEach(([id,key])=>$(id).addEventListener('input',e=>{wallpaperState.prefs[key]=Number(e.target.value);saveWallpaperPrefs();}));
 $('btnTheme').onclick=()=>{
   const d=document.documentElement;
   const dark=d.dataset.theme==='dark';
@@ -1168,7 +1284,7 @@ document.addEventListener('keydown',e=>{
   if(e.key==='Escape' && isFullscreen){
     togglePreviewFullscreen();
   }else if(e.key==='Escape'){
-    closeModal();
+    closeModal();closeWallpaper();
   }
 });
 
@@ -1592,6 +1708,7 @@ if($('btnWorkspaceDisclosure')) $('btnWorkspaceDisclosure').onclick=()=>{
 };
 
 applyI18n();refresh();
+restoreWallpaper();
 </script>
 </body>
 </html>
