@@ -8,6 +8,8 @@
     <title>{{ if .IsHome }}{{ .Site.Title }}{{ else }}{{ .Title }} · {{ .Site.Title }}{{ end }}</title>
     {{ $style := resources.Get "css/main.css" | minify | fingerprint }}
     <link rel="stylesheet" href="{{ $style.RelPermalink }}">
+    {{ $showcase := resources.Get "css/showcase.css" | minify | fingerprint }}
+    <link rel="stylesheet" href="{{ $showcase.RelPermalink }}">
     {{ block "head" . }}{{ end }}
   </head>
   <body>

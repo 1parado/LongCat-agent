@@ -1,0 +1,84 @@
+.showcase-section {
+  padding-bottom: 145px;
+}
+
+.showcase-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 22px;
+}
+
+.showcase-card {
+  margin: 0;
+  background: var(--paper-deep);
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+
+.showcase-card-wide {
+  grid-column: span 2;
+}
+
+.showcase-card img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  object-position: center top;
+  filter: saturate(.88);
+  transition: transform .35s, filter .35s;
+}
+
+.showcase-card-wide img {
+  aspect-ratio: 2.15 / 1;
+}
+
+.showcase-card:hover img {
+  transform: scale(1.025);
+  filter: saturate(1);
+}
+
+.showcase-card figcaption {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 15px;
+  padding: 15px 17px 17px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: .08em;
+}
+
+.showcase-card figcaption span {
+  color: var(--orange);
+}
+
+.showcase-card figcaption b {
+  color: var(--ink);
+  font-weight: 400;
+  letter-spacing: 0;
+}
+
+@media (max-width: 640px) {
+  .showcase-section {
+    padding-bottom: 85px;
+  }
+
+  .showcase-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .showcase-card-wide {
+    grid-column: auto;
+  }
+
+  .showcase-card-wide img {
+    aspect-ratio: 16 / 9;
+  }
+
+  .showcase-card figcaption {
+    display: block;
+    line-height: 1.8;
+  }
+}
