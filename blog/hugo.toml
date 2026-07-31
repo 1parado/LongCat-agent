@@ -1,0 +1,26 @@
+baseURL = 'https://1parado.github.io/frontend-agent/'
+languageCode = 'zh-cn'
+title = 'LongCat / Engineering Notes'
+enableRobotsTXT = true
+enableGitInfo = true
+
+[params]
+  description = 'LongCat-frontend 的 Agent 工程拆解：从 loop 到工具、从本地工作区到远程 IM。'
+  author = 'LongCat-frontend'
+  github = 'https://github.com/1parado/frontend-agent'
+  accent = '#ff6b35'
+
+[markup]
+  [markup.highlight]
+    noClasses = false
+    lineNos = false
+    style = 'monokai'
+  [markup.goldmark.renderer]
+    unsafe = true
+
+[taxonomies]
+  tag = 'tags'
+  series = 'series'
+
+[permalinks]
+  posts = '/notes/:slug/'

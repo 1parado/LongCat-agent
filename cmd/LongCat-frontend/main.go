@@ -16,6 +16,7 @@ import (
 
 	"LongCat-frontend/internal/agent"
 	"LongCat-frontend/internal/llm"
+	"LongCat-frontend/internal/plugin"
 	"LongCat-frontend/internal/server"
 	"LongCat-frontend/internal/ui"
 	"LongCat-frontend/internal/utils"
@@ -40,18 +41,18 @@ func main() {
 
 	switch cmd {
 	case "tui":
-		session, err := agent.NewSession(manager, skillsDir())
+		session, pm, err := newSession(manager)
 		if err != nil {
 			fatal(err)
 		}
-		if err := ui.New(session, ansi).Run(); err != nil {
+		if err := ui.New(session, ansi).SetPlugins(pm).Run(); err != nil {
 			fatal(err)
 		}
 	case "serve":
 		fs := flag.NewFlagSet("serve", flag.ExitOnError)
 		addr := fs.String("addr", "127.0.0.1:5510", "监听地址")
 		_ = fs.Parse(args)
-		session, err := agent.NewSession(manager, skillsDir())
+		session, _, err := newSession(manager)
 		if err != nil {
 			fatal(err)
 		}
@@ -70,6 +71,28 @@ func main() {
 		usage()
 		os.Exit(2)
 	}
+}
+
+// newSession 创建会话并加载用户级 / 项目级插件（扩展机制，见 internal/plugin）。
+// 插件加载失败只告警，不阻断主流程。返回的 *plugin.Manager 可注入 TUI 用于展示。
+func newSession(m *llm.Manager) (*agent.Session, *plugin.Manager, error) {
+	session, err := agent.NewSession(m, skillsDir())
+	if err != nil {
+		return nil, nil, err
+	}
+	var pm *plugin.Manager
+	if cfgDir, e := llm.ConfigDir(); e == nil {
+		userPlugins := filepath.Join(cfgDir, "plugins")
+		projPlugins, _ := filepath.Abs(".longcat-frontend/plugins")
+		pm = plugin.NewManager(userPlugins, projPlugins)
+		if e2 := pm.Discover(); e2 != nil {
+			fmt.Fprintf(os.Stderr, "⚠ 插件发现警告: %v\n", e2)
+		}
+		if e2 := pm.LoadInto(session); e2 != nil {
+			fmt.Fprintf(os.Stderr, "⚠ 插件加载警告: %v\n", e2)
+		}
+	}
+	return session, pm, nil
 }
 
 // skillsDir 优先使用可执行文件旁的 frontend-skills/，其次当前目录。

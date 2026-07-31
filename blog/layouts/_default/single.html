@@ -1,0 +1,15 @@
+{{ define "main" }}
+<article class="post shell">
+  <header class="post-header">
+    <a class="back-link" href="{{ "" | relURL }}#articles">← 回到 notes</a>
+    <div class="post-meta"><span class="post-order">{{ printf "%02d" .Params.order }}</span><span>{{ .Params.eyebrow }}</span><span>{{ .ReadingTime }} MIN READ</span><time datetime="{{ .Date.Format "2006-01-02" }}">{{ .Date.Format "2006.01" }}</time></div>
+    <h1>{{ .Title }}</h1>
+    <p class="post-description">{{ .Description }}</p>
+    {{ with .Params.tags }}<div class="tag-list">{{ range . }}<span>#{{ . }}</span>{{ end }}</div>{{ end }}
+  </header>
+  <div class="post-layout">
+    <aside class="post-aside"><span>ON THIS PAGE</span><nav id="post-toc">{{ .TableOfContents }}</nav></aside>
+    <div class="post-content">{{ .Content }}</div>
+  </div>
+</article>
+{{ end }}

@@ -1,0 +1,3 @@
+{{ define "main" }}
+<section class="shell list-page"><div class="section-kicker">THE NOTEBOOK</div><h1>所有 notes</h1><p class="list-lede">从请求进入 Agent，到结果回到工作区。每篇都对应仓库中的一个真实模块。</p><div class="article-list">{{ range .Pages.ByParam "order" }}<a class="article-row" href="{{ .RelPermalink }}"><span class="article-index">{{ printf "%02d" .Params.order }}</span><div class="article-main"><div class="article-meta"><span>{{ .Params.eyebrow }}</span><span>{{ .ReadingTime }} MIN READ</span></div><h3>{{ .Title }}</h3><p>{{ .Description }}</p></div><span class="article-arrow">↗</span></a>{{ end }}</div></section>
+{{ end }}

@@ -529,13 +529,13 @@ html[data-wallpaper="1"] .composer{background:color-mix(in srgb,var(--bg-input) 
 <!-- ========== Sidebar ========== -->
 <aside class="sidebar" id="leftSidebar">
   <div class="sb-top">
-    <button class="sidebar-toggle" id="btnSidebarToggle" title="切换侧栏">◧</button>
+    <button class="sidebar-toggle" id="btnSidebarToggle" data-i18n-title="toggleSidebar" title="切换侧栏">◧</button>
     <div class="sb-logo">
       <svg><use href="#longcat"/></svg>
       <span data-i18n="appName">LongCat-frontend</span>
     </div>
     <div class="grow"></div>
-    <button class="icon-btn" id="btnLang" title="Language">中</button>
+    <button class="icon-btn" id="btnLang" data-i18n-title="languageToggle" title="Language">中</button>
   </div>
   <div class="sb-search">
     <span class="si">⌕</span>
@@ -543,22 +543,22 @@ html[data-wallpaper="1"] .composer{background:color-mix(in srgb,var(--bg-input) 
   </div>
   <div class="sb-body">
     <nav class="sb-nav" id="sbNav"></nav>
-    <div class="sb-title">工作空间</div>
+    <div class="sb-title" data-i18n="workspaceTitle">工作空间</div>
     <div style="padding:0 8px;margin-bottom:16px">
       <div class="workspace-current" id="workspaceCurrentRow">
-        <button class="workspace-caret" id="btnWorkspaceDisclosure" title="展开工作空间">⌄</button>
+        <button class="workspace-caret" id="btnWorkspaceDisclosure" data-i18n-title="expandWorkspace" title="展开工作空间">⌄</button>
         <div class="workspace-current-main">
-          <div class="workspace-current-name" id="currentWorkspaceName">尚未打开</div>
-          <div class="workspace-current-path" id="currentWorkspace">打开一个项目文件夹</div>
+          <div class="workspace-current-name" id="currentWorkspaceName" data-i18n="workspaceNotOpen">尚未打开</div>
+          <div class="workspace-current-path" id="currentWorkspace" data-i18n="workspaceOpenHint">打开一个项目文件夹</div>
         </div>
         <div class="workspace-actions">
-          <button class="workspace-action" id="btnNewSession" title="新建会话">＋</button>
-          <button class="workspace-action" id="btnRevealWorkspace" style="display:none" title="在文件管理器中打开">↗</button>
+          <button class="workspace-action" id="btnNewSession" data-i18n-title="newSession" title="新建会话">＋</button>
+          <button class="workspace-action" id="btnRevealWorkspace" data-i18n-title="revealWorkspace" style="display:none" title="在文件管理器中打开">↗</button>
         </div>
       </div>
       <div class="workspace-open-panel" id="workspaceOpenPanel">
-        <div class="workspace-picker-copy">选择一个本地文件夹作为工作空间</div>
-        <button id="btnPickWorkspace" class="workspace-picker-button"><span>⌂</span> 选择文件夹</button>
+        <div class="workspace-picker-copy" data-i18n="workspacePickerHint">选择一个本地文件夹作为工作空间</div>
+        <button id="btnPickWorkspace" class="workspace-picker-button"><span>⌂</span> <span data-i18n="chooseFolder">选择文件夹</span></button>
       </div>
       <div class="workspace-list" id="workspaceList"></div>
       <div class="session-panel" id="sessionPanel"></div>
@@ -585,7 +585,7 @@ html[data-wallpaper="1"] .composer{background:color-mix(in srgb,var(--bg-input) 
     <button class="icon-btn" id="btnTheme" data-i18n-title="toggleTheme" title="切换主题">◐</button>
     <button class="icon-btn" id="btnWallpaper" data-i18n-title="wallpaper" title="背景">▧</button>
     <button class="icon-btn" id="btnPreviewToggle" data-i18n-title="preview" title="预览">▤</button>
-    <button class="icon-btn" id="btnSkillsView" title="Skills 市场">◆</button>
+    <button class="icon-btn" id="btnSkillsView" data-i18n-title="skillsMarket" title="Skills 市场">◆</button>
   </div>
 
   <div class="chat-area" id="chatArea">
@@ -667,14 +667,14 @@ html[data-wallpaper="1"] .composer{background:color-mix(in srgb,var(--bg-input) 
         <div class="composer-attachments" id="composerAttachments" aria-live="polite"></div>
         <div class="composer-tools">
           <input id="fileInput" type="file" multiple hidden>
-          <button class="chip-btn attach-btn" id="btnAttach" title="上传文件" aria-label="上传文件">＋</button>
+          <button class="chip-btn attach-btn" id="btnAttach" data-i18n-title="attachFiles" data-i18n-aria="attachFiles" title="上传文件" aria-label="上传文件">＋</button>
           <button class="chip-btn workspace-chip" id="chipWorkspace" title="当前工作空间">⌂ 未选择工作空间</button>
           <button class="chip-btn" id="chipModel">—</button>
           <button class="chip-btn" id="chipReset" data-i18n="resetChip">↺ 重置</button>
-          <button class="chip-btn" id="btnUndo" data-i18n="undoLast" title="撤销最近一次 Agent 文件修改">↶ 撤销</button>
+          <button class="chip-btn" id="btnUndo" data-i18n="undoLast" data-i18n-title="undoRecent" title="撤销最近一次 Agent 文件修改">↶ 撤销</button>
           <div class="grow"></div>
-          <button class="stop-btn" id="btnStop" title="中断回复">■</button>
-          <button class="send-btn" id="btnSend" title="Enter">↑</button>
+          <button class="stop-btn" id="btnStop" data-i18n-title="stopReply" title="中断回复">■</button>
+          <button class="send-btn" id="btnSend" data-i18n-title="sendMessage" title="Enter">↑</button>
         </div>
       </div>
       <div class="composer-hint" data-i18n="inputHint">Enter 发送 · Shift+Enter 换行</div>
@@ -824,7 +824,7 @@ const I18N={
   appName:'LongCat',appTitle:'LongCat — 智能通用 AI 助手',
   searchPlaceholder:'搜索…',
   navChat:'对话',navSkills:'技能',navProviders:'供应商',
-  providersTitle:'供应商',skillsTitle:'技能',
+  providersTitle:'供应商',skillsTitle:'技能',workspaceTitle:'工作空间',workspaceNotOpen:'尚未打开',workspaceOpenHint:'打开一个项目文件夹',workspacePickerHint:'选择一个本地文件夹作为工作空间',chooseFolder:'选择文件夹',workspaceNotSelected:'未选择工作空间',workspaceChooseFirst:'选择一个工作空间后开始',workspaceLoadFailed:'加载失败',workspaceServiceUnavailable:'无法连接工作空间服务',recentWorkspaces:'最近打开',sessionsTitle:'会话',sessionEmpty:'还没有会话，点击右侧 ＋ 开始',newSession:'新建会话',renameSession:'重命名',deleteSession:'删除',today:'今天',yesterday:'昨天',older:'更早',languageToggle:'切换语言',
   connected:'已连接',disconnected:'未连接',
   welcomeTitle:'今天想做什么？',
   inputPlaceholder:'描述你的问题、需求或想法…',
@@ -833,7 +833,7 @@ const I18N={
   attachFiles:'上传文件',removeAttachment:'移除附件',
   fileTooLarge:'文件过大（单个不超过 15 MB）',attachmentsTooMany:'最多上传 10 个文件',
   attachmentsTotalTooLarge:'附件总大小不能超过 48 MB',
-  resetChip:'↺ 重置',
+  resetChip:'↺ 重置',skillsCount:'{count} 个技能',toggleSidebar:'切换侧栏',expandWorkspace:'展开工作空间',revealWorkspace:'在文件管理器中打开',skillsMarket:'Skills 市场',currentWorkspace:'当前工作空间',undoRecent:'撤销最近一次 Agent 文件修改',stopReply:'中断回复',sendMessage:'发送',
   undoLast:'↶ 撤销',workspaceChanged:'工作区文件已变化：{path}',
   mcpMenu:'MCP',activityMenu:'活动',imMenu:'IM 平台',imPaneKicker:'REMOTE CHANNELS / ONBOARDING',imPaneTitle:'IM 平台',imPaneIntro:'选择一个平台，使用二维码完成接入。凭据会保存在本机，Agent 可以通过桥接服务响应对应会话。',imFeishuDesc:'飞书个人 Agent：扫码授权并自动创建应用凭据。',imLarkDesc:'Lark Personal Agent：使用国际版账号体系扫码登录。',imWeixinDesc:'微信 iLink Bot：扫码确认机器人登录，二维码过期会自动刷新。',configureIM:'配置接入',imConnectTitle:'接入平台',imConnectHint:'扫码完成后会保存为一个 IM 实例',imInstancePlaceholder:'实例名称（可选）',imScanTitle:'请使用对应 App 扫描二维码',imInstancesTitle:'已接入实例',imNotConnected:'未接入',imConfigured:'已配置',imActive:'运行中',controlRoomTitle:'MCP 控制室',controlRoomKicker:'服务状态与工具',activityRoomTitle:'工作区活动',activityRoomKicker:'Agent 运行与文件变更',mcpSection:'MCP 服务',imSection:'IM Bridge',agentActivitySection:'Agent 活动',agentActivityHint:'实时子 Agent 任务',changesSection:'工作区变更',refreshBtn:'刷新',scanLogin:'扫码登录',emptyMcp:'尚未配置 MCP 服务',emptyIm:'尚未配置 IM 实例',emptyActivity:'当前没有运行中的子 Agent',emptyChanges:'暂无 Agent 文件变更',imStopped:'已停止',imRunning:'运行中',imDegraded:'需要处理',scanWaiting:'等待扫码确认…',scanDone:'登录完成，凭据已保存',scanError:'扫码失败：{error}',diffBtn:'查看 Diff',openBtn:'打开',
 toggleTheme:'切换主题',preview:'预览',settings:'设置',
@@ -856,7 +856,7 @@ toggleTheme:'切换主题',preview:'预览',settings:'设置',
   appName:'LongCat',appTitle:'LongCat — Intelligent AI Assistant',
   searchPlaceholder:'Search…',
   navChat:'Chat',navSkills:'Skills',navProviders:'Providers',
-  providersTitle:'Providers',skillsTitle:'Skills',
+  providersTitle:'Providers',skillsTitle:'Skills',workspaceTitle:'Workspace',workspaceNotOpen:'Not opened',workspaceOpenHint:'Open a project folder',workspacePickerHint:'Choose a local folder as the workspace',chooseFolder:'Choose folder',workspaceNotSelected:'No workspace selected',workspaceChooseFirst:'Choose a workspace to get started',workspaceLoadFailed:'Load failed',workspaceServiceUnavailable:'Workspace service unavailable',recentWorkspaces:'Recent',sessionsTitle:'Sessions',sessionEmpty:'No sessions yet. Click ＋ to start',newSession:'New session',renameSession:'Rename',deleteSession:'Delete',today:'Today',yesterday:'Yesterday',older:'Older',languageToggle:'Switch language',
   connected:'Connected',disconnected:'Disconnected',
   welcomeTitle:'What can I help you with today?',
   inputPlaceholder:'Describe your problem, requirement or idea…',
@@ -865,7 +865,7 @@ toggleTheme:'切换主题',preview:'预览',settings:'设置',
   attachFiles:'Upload files',removeAttachment:'Remove attachment',
   fileTooLarge:'File is too large (15 MB max)',attachmentsTooMany:'Up to 10 files',
   attachmentsTotalTooLarge:'Attachments must be 48 MB or less in total',
-  resetChip:'↺ Reset',
+  resetChip:'↺ Reset',skillsCount:'{count} skills',toggleSidebar:'Toggle sidebar',expandWorkspace:'Expand workspace',revealWorkspace:'Reveal in file manager',skillsMarket:'Skills market',currentWorkspace:'Current workspace',undoRecent:'Undo the latest Agent file change',stopReply:'Stop reply',sendMessage:'Send',
   undoLast:'↶ Undo',workspaceChanged:'Workspace file changed: {path}',
   mcpMenu:'MCP',activityMenu:'Activity',imMenu:'IM platforms',imPaneKicker:'REMOTE CHANNELS / ONBOARDING',imPaneTitle:'IM platforms',imPaneIntro:'Choose a platform and complete onboarding with a QR code. Credentials stay on this device so the Agent can respond through the bridge.',imFeishuDesc:'Feishu Personal Agent: authorize by QR and create app credentials automatically.',imLarkDesc:'Lark Personal Agent: sign in with the international account flow.',imWeixinDesc:'Weixin iLink Bot: confirm the bot login by QR; expired codes refresh automatically.',configureIM:'Configure',imConnectTitle:'Connect a platform',imConnectHint:'A new IM instance is saved after QR confirmation',imInstancePlaceholder:'Instance name (optional)',imScanTitle:'Scan with the matching app',imInstancesTitle:'Connected instances',imNotConnected:'Not connected',imConfigured:'Configured',imActive:'Running',controlRoomTitle:'MCP control room',controlRoomKicker:'Service status and tools',activityRoomTitle:'Workspace activity',activityRoomKicker:'Agent runs and file changes',mcpSection:'MCP servers',imSection:'IM Bridge',agentActivitySection:'Agent activity',agentActivityHint:'Live sub-agent tasks',changesSection:'Workspace changes',refreshBtn:'Refresh',scanLogin:'Scan to sign in',emptyMcp:'No MCP servers configured',emptyIm:'No IM instances configured',emptyActivity:'No sub-agents are running',emptyChanges:'No Agent file changes yet',imStopped:'Stopped',imRunning:'Running',imDegraded:'Needs attention',scanWaiting:'Waiting for scan confirmation…',scanDone:'Signed in; credentials saved',scanError:'Scan failed: {error}',diffBtn:'View Diff',openBtn:'Open',
 toggleTheme:'Toggle theme',preview:'Preview',settings:'Settings',
@@ -1049,7 +1049,7 @@ async function refresh(){
   $('chipModel').textContent=act?`◇ ${act.model||act.id}`:'◇ —';
   $('contextBar').innerHTML=[
     act?`<span class="ctx-chip">☁ ${esc(act.id)}</span>`:'',
-    `<span class="ctx-chip">◆ ${state.skills.length} skills</span>`
+    `<span class="ctx-chip">◆ ${esc(tf('skillsCount',{count:state.skills.length}))}</span>`
   ].join('');
 
   // 加载工作空间
@@ -1692,18 +1692,18 @@ async function loadWorkspace(restore=true){
       if(data.preview?.current_url && previewUrl!=='generated://response' && !previewUrl){navigatePreviewWithoutHistory(data.preview.current_url);}
       else if(previewOn && previewUrl!=='generated://response')loadWorkspacePreview();
     }else{
-      $('currentWorkspaceName').textContent='尚未打开';
-      $('currentWorkspace').textContent='打开一个项目文件夹';
-      $('chipWorkspace').textContent='⌂ 未选择工作空间';
-      $('chipWorkspace').title='选择一个工作空间后开始';
+      $('currentWorkspaceName').textContent=t('workspaceNotOpen');
+      $('currentWorkspace').textContent=t('workspaceOpenHint');
+      $('chipWorkspace').textContent='⌂ '+t('workspaceNotSelected');
+      $('chipWorkspace').title=t('workspaceChooseFirst');
       $('workspaceOpenPanel').classList.remove('is-collapsed');
       $('sessionPanel').innerHTML='';
       $('btnRevealWorkspace').style.display='none';
       if(restore)restoreMessages([]);
     }
   }catch(e){
-    $('currentWorkspaceName').textContent='加载失败';
-    $('currentWorkspace').textContent='无法连接工作空间服务';
+    $('currentWorkspaceName').textContent=t('workspaceLoadFailed');
+    $('currentWorkspace').textContent=t('workspaceServiceUnavailable');
   }
 }
 function connectWorkspaceEvents(){
@@ -1749,14 +1749,13 @@ async function revealWorkspace(){
 
 function sessionGroupLabel(value){
   const date=new Date(value);
-  if(Number.isNaN(date.getTime()))return '更早';
+  if(Number.isNaN(date.getTime()))return t('older');
   const now=new Date();
   const start=d=>new Date(d.getFullYear(),d.getMonth(),d.getDate()).getTime();
   const diff=Math.round((start(now)-start(date))/86400000);
-  if(diff<=0)return '今天';
-  if(diff===1)return '昨天';
-  if(date.getFullYear()===now.getFullYear())return `${date.getMonth()+1}月${date.getDate()}日`;
-  return `${date.getFullYear()}/${String(date.getMonth()+1).padStart(2,'0')}/${String(date.getDate()).padStart(2,'0')}`;
+  if(diff<=0)return t('today');
+  if(diff===1)return t('yesterday');
+  return new Intl.DateTimeFormat(curLang,{year:date.getFullYear()===now.getFullYear()?'numeric':'numeric',month:'short',day:'numeric'}).format(date);
 }
 function sessionTime(value){
   const date=new Date(value);
@@ -1764,8 +1763,8 @@ function sessionTime(value){
 }
 function renderSessions(list,active){
   const p=$('sessionPanel');
-  let html='<div class="session-panel-head"><span>会话</span><button class="session-new" onclick="newSession()" title="新建会话">＋</button></div>';
-  if(!list.length){ html+='<div class="session-empty">还没有会话，点击右侧 ＋ 开始</div>'; p.innerHTML=html; return; }
+  let html='<div class="session-panel-head"><span>'+esc(t('sessionsTitle'))+'</span><button class="session-new" onclick="newSession()" data-i18n-title="newSession" title="'+esc(t('newSession'))+'">＋</button></div>';
+  if(!list.length){ html+='<div class="session-empty">'+esc(t('sessionEmpty'))+'</div>'; p.innerHTML=html; return; }
   const groups=[];
   const byGroup=new Map();
   list.forEach(s=>{
@@ -1776,15 +1775,15 @@ function renderSessions(list,active){
   html+='<div class="session-list">'+groups.map(group=>`<div class="session-group">
     <div class="session-group-label">${esc(group.label)}</div>
     ${group.sessions.map(s=>`<div class="session-row${s.id===active?' active':''}" role="button" tabindex="0" onclick="useSession('${esc(s.id)}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();useSession('${esc(s.id)}')}" title="${esc(s.title)}">
-      <span class="session-row-marker"></span><span class="session-row-title">${esc(s.title||'新会话')}</span><span class="session-row-time">${esc(sessionTime(s.updated_at))}</span>
-      <span class="session-row-actions"><button class="session-action" title="重命名" onclick="renameSession('${esc(s.id)}',event)">✎</button><button class="session-action danger" title="删除" onclick="deleteSession('${esc(s.id)}',event)">×</button></span>
+      <span class="session-row-marker"></span><span class="session-row-title">${esc(s.title||t('newSession'))}</span><span class="session-row-time">${esc(sessionTime(s.updated_at))}</span>
+      <span class="session-row-actions"><button class="session-action" title="${esc(t('renameSession'))}" onclick="renameSession('${esc(s.id)}',event)">✎</button><button class="session-action danger" title="${esc(t('deleteSession'))}" onclick="deleteSession('${esc(s.id)}',event)">×</button></span>
     </div>`).join('')}
   </div>`).join('')+'</div>';
   p.innerHTML=html;
 }
 function renderWorkspaces(list,active){
   const p=$('workspaceList'); if(!list.length){p.innerHTML='';return;}
-  p.innerHTML='<div class="workspace-list-label">最近打开</div>'+list.slice(0,6).map(w=>`<button class="workspace-recent${w.id===active?' active':''}" onclick="openExistingWorkspace(decodeURIComponent('${encodeURIComponent(w.path)}'))" title="${esc(w.path)}">${esc(w.name)}</button>`).join('');
+  p.innerHTML='<div class="workspace-list-label">'+esc(t('recentWorkspaces'))+'</div>'+list.slice(0,6).map(w=>`<button class="workspace-recent${w.id===active?' active':''}" onclick="openExistingWorkspace(decodeURIComponent('${encodeURIComponent(w.path)}'))" title="${esc(w.path)}">${esc(w.name)}</button>`).join('');
 }
 async function openExistingWorkspace(path){ await setWorkspace(path); }
 async function newSession(){
@@ -1947,6 +1946,323 @@ if($('btnWorkspaceDisclosure')) $('btnWorkspaceDisclosure').onclick=()=>{
 
 applyI18n();refresh();
 restoreWallpaper();
+</script>
+<script id="i18n-runtime">
+// Superseded by the unified runtime below. Keep the legacy catalog for
+// reference, but do not execute its duplicate selector/init lifecycle.
+if (false) {
+(function () {
+  const CATALOGS = {
+ "zh-CN": {
+  "text": {
+   "appTitle": "LongCat",
+   "appName": "LongCat-frontend",
+   "providersTitle": "供应商",
+   "skillsTitle": "技能",
+   "connected": "已连接",
+   "welcomeTitle": "今天想构建什么？",
+   "imPaneKicker": "REMOTE CHANNELS / ONBOARDING",
+   "imPaneTitle": "IM 平台",
+   "imPaneIntro": "选择一个平台，使用二维码完成接入。凭据会保存在本机，Agent 可以通过桥接服务响应对应会话。",
+   "imFeishuDesc": "飞书个人 Agent：扫码授权并自动创建应用凭据。",
+   "configureIM": "配置接入",
+   "imLarkDesc": "Lark Personal Agent：使用国际版账号体系扫码登录。",
+   "imWeixinDesc": "微信 iLink Bot：扫码确认机器人登录，二维码过期会自动刷新。",
+   "imConnectTitle": "接入平台",
+   "imConnectHint": "扫码完成后会保存为一个 IM 实例",
+   "scanLogin": "扫码登录",
+   "imScanTitle": "请使用对应 App 扫描二维码",
+   "scanWaiting": "等待扫码确认…",
+   "imInstancesTitle": "已接入实例",
+   "resetChip": "↺ 重置",
+   "undoLast": "↶ 撤销",
+   "inputHint": "Enter 发送 · Shift+Enter 换行",
+   "previewTitle": "轻量浏览器",
+   "providerModalTitle": "LLM 供应商管理",
+   "thID": "ID",
+   "thProtocol": "协议",
+   "thModel": "模型",
+   "thKey": "密钥",
+   "thActions": "操作",
+   "addProvider": "添加供应商",
+   "lblID": "标识符",
+   "lblProtocol": "通信协议",
+   "lblURL": "Base URL",
+   "lblKey": "API Key",
+   "lblModel": "模型名称",
+   "lblPriority": "优先级",
+   "clearBtn": "清空",
+   "saveBtn": "保存",
+   "wallpaperTitle": "背景",
+   "wallpaperEmpty": "选择一张图片或视频，让工作台拥有自己的气氛",
+   "wallpaperNone": "尚未设置壁纸",
+   "chooseWallpaper": "选择壁纸",
+   "clearWallpaper": "恢复默认",
+   "wallpaperScrim": "可读性遮罩",
+   "wallpaperPane": "面板不透明度",
+   "wallpaperBlur": "侧栏与预览模糊",
+   "wallpaperHint": "壁纸只保存在本机应用数据中，不会上传到模型服务。图片、GIF 和静音循环视频均可使用。",
+   "controlRoomTitle": "MCP 控制室",
+   "controlRoomKicker": "连接、活动与变更",
+   "mcpSection": "MCP 服务",
+   "refreshBtn": "刷新",
+   "activityRoomTitle": "工作区活动",
+   "activityRoomKicker": "Agent 运行与文件变更",
+   "agentActivitySection": "Agent 活动",
+   "agentActivityHint": "实时子 Agent 任务",
+   "changesSection": "工作区变更"
+  },
+  "ph": {
+   "searchPlaceholder": "搜索…",
+   "imInstancePlaceholder": "实例名称（可选）",
+   "inputPlaceholder": "描述你想要的组件、页面或前端问题…"
+  },
+  "title": {
+   "toggleTheme": "切换主题",
+   "wallpaper": "背景",
+   "preview": "预览"
+  }
+ },
+ "en": {
+  "text": {
+   "appTitle": "LongCat",
+   "appName": "LongCat-frontend",
+   "providersTitle": "Providers",
+   "skillsTitle": "Skills",
+   "connected": "Connected",
+   "welcomeTitle": "What do you want to build today?",
+   "imPaneKicker": "REMOTE CHANNELS / ONBOARDING",
+   "imPaneTitle": "IM Platforms",
+   "imPaneIntro": "Pick a platform and connect via QR code. Credentials are stored locally; the agent can respond to the corresponding session through the bridge service.",
+   "imFeishuDesc": "Feishu Personal Agent: scan to authorize and auto-create app credentials.",
+   "configureIM": "Configure",
+   "imLarkDesc": "Lark Personal Agent: scan to sign in with the international account system.",
+   "imWeixinDesc": "WeChat iLink Bot: scan to confirm bot login; the QR code auto-refreshes on expiry.",
+   "imConnectTitle": "Connect Platform",
+   "imConnectHint": "A connected platform is saved as one IM instance",
+   "scanLogin": "Scan to sign in",
+   "imScanTitle": "Scan the QR code with the corresponding app",
+   "scanWaiting": "Waiting for scan confirmation…",
+   "imInstancesTitle": "Connected Instances",
+   "resetChip": "↺ Reset",
+   "undoLast": "↶ Undo",
+   "inputHint": "Enter to send · Shift+Enter for new line",
+   "previewTitle": "Lightweight Browser",
+   "providerModalTitle": "LLM Provider Management",
+   "thID": "ID",
+   "thProtocol": "Protocol",
+   "thModel": "Model",
+   "thKey": "Key",
+   "thActions": "Actions",
+   "addProvider": "Add Provider",
+   "lblID": "Identifier",
+   "lblProtocol": "Protocol",
+   "lblURL": "Base URL",
+   "lblKey": "API Key",
+   "lblModel": "Model name",
+   "lblPriority": "Priority",
+   "clearBtn": "Clear",
+   "saveBtn": "Save",
+   "wallpaperTitle": "Wallpaper",
+   "wallpaperEmpty": "Pick an image or video to give your workspace its own vibe",
+   "wallpaperNone": "No wallpaper set",
+   "chooseWallpaper": "Choose wallpaper",
+   "clearWallpaper": "Restore default",
+   "wallpaperScrim": "Readability scrim",
+   "wallpaperPane": "Panel opacity",
+   "wallpaperBlur": "Sidebar & preview blur",
+   "wallpaperHint": "Wallpapers are stored only in local app data and are never uploaded to the model service. Images, GIFs, and muted looping videos are all supported.",
+   "controlRoomTitle": "MCP Control Room",
+   "controlRoomKicker": "Connections, activity & changes",
+   "mcpSection": "MCP Servers",
+   "refreshBtn": "Refresh",
+   "activityRoomTitle": "Workspace Activity",
+   "activityRoomKicker": "Agent runs & file changes",
+   "agentActivitySection": "Agent Activity",
+   "agentActivityHint": "Live sub-agent tasks",
+   "changesSection": "Workspace Changes"
+  },
+  "ph": {
+   "searchPlaceholder": "Search…",
+   "imInstancePlaceholder": "Instance name (optional)",
+   "inputPlaceholder": "Describe the component, page, or frontend issue you want…"
+  },
+  "title": {
+   "toggleTheme": "Toggle theme",
+   "wallpaper": "Wallpaper",
+   "preview": "Preview"
+  }
+ },
+ "zh-TW": {
+  "text": {
+   "appTitle": "LongCat",
+   "appName": "LongCat-frontend",
+   "providersTitle": "供应商",
+   "skillsTitle": "技能",
+   "connected": "已连接",
+   "welcomeTitle": "今天想构建什么？",
+   "imPaneKicker": "REMOTE CHANNELS / ONBOARDING",
+   "imPaneTitle": "IM 平台",
+   "imPaneIntro": "选择一个平台，使用二维码完成接入。凭据会保存在本机，Agent 可以通过桥接服务响应对应会话。",
+   "imFeishuDesc": "飞书个人 Agent：扫码授权并自动创建应用凭据。",
+   "configureIM": "配置接入",
+   "imLarkDesc": "Lark Personal Agent：使用国际版账号体系扫码登录。",
+   "imWeixinDesc": "微信 iLink Bot：扫码确认机器人登录，二维码过期会自动刷新。",
+   "imConnectTitle": "接入平台",
+   "imConnectHint": "扫码完成后会保存为一个 IM 实例",
+   "scanLogin": "扫码登录",
+   "imScanTitle": "请使用对应 App 扫描二维码",
+   "scanWaiting": "等待扫码确认…",
+   "imInstancesTitle": "已接入实例",
+   "resetChip": "↺ 重置",
+   "undoLast": "↶ 撤销",
+   "inputHint": "Enter 发送 · Shift+Enter 换行",
+   "previewTitle": "轻量浏览器",
+   "providerModalTitle": "LLM 供应商管理",
+   "thID": "ID",
+   "thProtocol": "协议",
+   "thModel": "模型",
+   "thKey": "密钥",
+   "thActions": "操作",
+   "addProvider": "添加供应商",
+   "lblID": "标识符",
+   "lblProtocol": "通信协议",
+   "lblURL": "Base URL",
+   "lblKey": "API Key",
+   "lblModel": "模型名称",
+   "lblPriority": "优先级",
+   "clearBtn": "清空",
+   "saveBtn": "保存",
+   "wallpaperTitle": "背景",
+   "wallpaperEmpty": "选择一张图片或视频，让工作台拥有自己的气氛",
+   "wallpaperNone": "尚未设置壁纸",
+   "chooseWallpaper": "选择壁纸",
+   "clearWallpaper": "恢复默认",
+   "wallpaperScrim": "可读性遮罩",
+   "wallpaperPane": "面板不透明度",
+   "wallpaperBlur": "侧栏与预览模糊",
+   "wallpaperHint": "壁纸只保存在本机应用数据中，不会上传到模型服务。图片、GIF 和静音循环视频均可使用。",
+   "controlRoomTitle": "MCP 控制室",
+   "controlRoomKicker": "连接、活动与变更",
+   "mcpSection": "MCP 服务",
+   "refreshBtn": "刷新",
+   "activityRoomTitle": "工作区活动",
+   "activityRoomKicker": "Agent 运行与文件变更",
+   "agentActivitySection": "Agent 活动",
+   "agentActivityHint": "实时子 Agent 任务",
+   "changesSection": "工作区变更"
+  },
+  "ph": {
+   "searchPlaceholder": "搜索…",
+   "imInstancePlaceholder": "实例名称（可选）",
+   "inputPlaceholder": "描述你想要的组件、页面或前端问题…"
+  },
+  "title": {
+   "toggleTheme": "切换主题",
+   "wallpaper": "背景",
+   "preview": "预览"
+  }
+ }
+};
+  function lookup(locale, bucket, key) {
+    const c = CATALOGS[locale];
+    if (c && c[bucket] && c[bucket][key] != null) return c[bucket][key];
+    const zh = CATALOGS["zh-CN"];
+    if (zh && zh[bucket] && zh[bucket][key] != null) return zh[bucket][key];
+    return null;
+  }
+  function apply(locale) {
+    try { document.documentElement.lang = locale; } catch (e) {}
+    document.querySelectorAll('[data-i18n]').forEach(function (el) {
+      const v = lookup(locale, 'text', el.getAttribute('data-i18n'));
+      if (v == null) return;
+      if (el.firstChild && el.firstChild.nodeType === 3) el.firstChild.nodeValue = v;
+      else el.textContent = v;
+    });
+    document.querySelectorAll('[data-i18n-ph]').forEach(function (el) {
+      const v = lookup(locale, 'ph', el.getAttribute('data-i18n-ph'));
+      if (v != null) el.setAttribute('placeholder', v);
+    });
+    document.querySelectorAll('[data-i18n-title]').forEach(function (el) {
+      const v = lookup(locale, 'title', el.getAttribute('data-i18n-title'));
+      if (v != null) el.setAttribute('title', v);
+    });
+    try { localStorage.setItem('lc-locale', locale); } catch (e) {}
+    const sel = document.getElementById('lcLangSelect');
+    if (sel) sel.value = locale;
+  }
+  window.applyI18n = apply;
+  const sel = document.createElement('select');
+  sel.id = 'lcLangSelect';
+  sel.style.cssText = 'position:fixed;right:12px;bottom:12px;z-index:9999;padding:4px 8px;border-radius:8px;border:1px solid var(--border,#2a2a2a);background:var(--bg-elevated,#1a1a1a);color:var(--text,#e6e6e6);font-size:12px;cursor:pointer;';
+  [['zh-CN','中文'],['en','English'],['zh-TW','繁體']].forEach(function (o) {
+    const opt = document.createElement('option'); opt.value = o[0]; opt.textContent = o[1]; sel.appendChild(opt);
+  });
+  sel.addEventListener('change', function () { apply(sel.value); });
+  function init() {
+    if (!document.getElementById('lcLangSelect')) document.body.appendChild(sel);
+    let saved = null; try { saved = localStorage.getItem('lc-locale'); } catch (e) {}
+    apply(saved || 'zh-CN');
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
+})();
+}
+</script>
+<script id="i18n-final-runtime">
+// Keep one effective language switcher. The legacy catalog above is retained
+// for compatibility, but all UI updates use the primary I18N catalog.
+(function () {
+  const normalizeLocale = value => {
+    const locale = String(value || '').toLowerCase();
+    if (locale === 'en' || locale.startsWith('en-')) return 'en-US';
+    if (locale === 'zh-tw' || locale === 'zh-hk') return 'zh-TW';
+    return 'zh-CN';
+  };
+  const applyUnified = locale => {
+    curLang = normalizeLocale(locale);
+    try { localStorage.setItem('lang', curLang); localStorage.setItem('lc-locale', curLang); } catch (e) {}
+    document.documentElement.lang = curLang;
+    document.querySelectorAll('[data-i18n]').forEach(el => {
+      const value = t(el.dataset.i18n);
+      if (value !== el.dataset.i18n) el.textContent = value;
+    });
+    document.querySelectorAll('[data-i18n-ph]').forEach(el => {
+      const value = t(el.dataset.i18nPh);
+      if (value !== el.dataset.i18nPh) el.placeholder = value;
+    });
+    document.querySelectorAll('[data-i18n-title]').forEach(el => {
+      const value = t(el.dataset.i18nTitle);
+      if (value !== el.dataset.i18nTitle) el.title = value;
+    });
+    document.querySelectorAll('[data-i18n-aria]').forEach(el => {
+      const value = t(el.dataset.i18nAria);
+      if (value !== el.dataset.i18nAria) el.setAttribute('aria-label', value);
+    });
+    if ($('btnLang')) $('btnLang').textContent = curLang === 'en-US' ? '中' : 'EN';
+    document.title = t('appTitle');
+    if (typeof renderNav === 'function') renderNav();
+    const selector = $('lcLangSelect');
+    if (selector) selector.value = curLang;
+  };
+  const toggleUnified = () => {
+    const next = curLang === 'en-US' ? 'zh-CN' : 'en-US';
+    fetch('/api/settings/locale', {
+      method: 'PUT', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({locale: next === 'en-US' ? 'en' : 'zh'})
+    }).catch(() => {});
+    applyUnified(next);
+    if (typeof refresh === 'function') refresh();
+  };
+  window.applyI18n = applyUnified;
+  window.toggleLang = toggleUnified;
+  const legacySelector = $('lcLangSelect');
+  if (legacySelector) legacySelector.remove();
+  if ($('btnLang')) $('btnLang').onclick = toggleUnified;
+  let saved = navigator.language;
+  try { saved = localStorage.getItem('lang') || localStorage.getItem('lc-locale') || saved; } catch (e) {}
+  applyUnified(saved);
+})();
 </script>
 </body>
 </html>

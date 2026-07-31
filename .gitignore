@@ -19,6 +19,15 @@ desktop/src-tauri/target/
 !AGENTS.md
 !CONTRIBUTING.md
 !ISSUES.md
+!PLUGINS.md
+!blog/
+!blog/**
+
+# ---- 本地 Go 构建缓存 ----
+.gocache/
+.gomodcache/
+blog/public/
+.hugo_build.lock
 
 # ---- 敏感信息 ----
 # 环境变量 / 密钥 / 证书

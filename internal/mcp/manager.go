@@ -118,6 +118,28 @@ func (m *Manager) UpsertProjectServer(server MCPServer) error {
 	return m.saveProjectLocked()
 }
 
+// AddEphemeral 仅在内存中注册一个 MCP 服务，不写入项目 mcp.json。
+// 供插件系统挂载插件声明的 MCP 服务使用；工具发现在后台异步进行。
+func (m *Manager) AddEphemeral(server MCPServer) error {
+	if strings.TrimSpace(server.ID) == "" || strings.TrimSpace(server.URL) == "" {
+		return errors.New("MCP 服务需要 id 和 url")
+	}
+	if sanitize(server.ID) != server.ID || strings.Contains(server.ID, "__") {
+		return errors.New("MCP 服务 id 只能包含字母、数字、下划线和短横")
+	}
+	if server.Protocol == "" {
+		server.Protocol = "http"
+	}
+	if server.Tone == "" {
+		server.Tone = HealthUnknown
+	}
+	m.mu.Lock()
+	m.servers[server.ID] = server
+	m.mu.Unlock()
+	go func() { _ = m.discoverTools(context.Background(), server.ID) }()
+	return nil
+}
+
 func (m *Manager) RemoveProjectServer(id string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

@@ -1,0 +1,60 @@
+{{ define "main" }}
+<section class="hero shell">
+  <div class="hero-copy">
+    <p class="eyebrow"><span>LOCAL AGENT / FIELD NOTES</span><b>v0.1</b></p>
+    <h1>让模型的每一次<br><em>行动都能被看见。</em></h1>
+    <p class="hero-lede">LongCat-frontend 的工程拆解。围绕 loop、tools、skills、MCP 和远程 IM，追踪一条请求如何穿过系统，最后落在一个真实的工作区里。</p>
+    <div class="hero-actions">
+      <a class="button button-primary" href="#articles">开始阅读 <span>↓</span></a>
+      <a class="text-link" href="{{ .Site.Params.github }}" target="_blank" rel="noreferrer">查看 GitHub <span>↗</span></a>
+    </div>
+  </div>
+  <div class="trace-card" aria-label="Agent 运行轨迹示意图">
+    <div class="trace-card-head"><span>RUN TRACE / 0007</span><span class="live"><i></i>LIVE MODEL LOOP</span></div>
+    <div class="trace-map">
+      <div class="trace-node node-message"><span class="node-index">01</span><strong>message</strong><small>user intent</small></div>
+      <div class="trace-line line-a"><span></span></div>
+      <div class="trace-node node-model"><span class="node-index">02</span><strong>model</strong><small>stream + decide</small></div>
+      <div class="trace-line line-b"><span></span></div>
+      <div class="trace-node node-tool"><span class="node-index">03</span><strong>tool</strong><small>read / write / call</small></div>
+      <div class="trace-line line-c"><span></span></div>
+      <div class="trace-node node-workspace"><span class="node-index">04</span><strong>workspace</strong><small>diff / undo / next</small></div>
+    </div>
+    <div class="trace-card-foot"><span>round = 01</span><span>status: <b>awaiting next turn</b></span></div>
+  </div>
+</section>
+
+<section class="signal-strip">
+  <div class="shell signal-grid">
+    <div><b>GO</b><span>runtime</span></div>
+    <div><b>TAURI v2</b><span>desktop shell</span></div>
+    <div><b>4 PROTOCOLS</b><span>one message shape</span></div>
+    <div><b>LOCAL FIRST</b><span>workspace boundary</span></div>
+  </div>
+</section>
+
+<section class="section shell intro-section">
+  <div class="section-kicker">THE SYSTEM IN ONE SENTENCE</div>
+  <div class="intro-grid">
+    <h2>不是把聊天框做大，<br>而是把<span class="accent-underline">行动边界</span>做清楚。</h2>
+    <div class="intro-text"><p>LongCat-frontend 让模型负责理解和选择，让运行时负责执行和约束。模型永远只返回意图与参数；真正读写工作区、调用 MCP、通知 UI 的，是经过边界检查的本地工具。</p><a class="arrow-link" href="{{ "notes/architecture/" | relURL }}">先看整体地图 <span>→</span></a></div>
+  </div>
+</section>
+
+<section class="section shell articles-section" id="articles">
+  <div class="section-heading"><div><div class="section-kicker">THE NOTEBOOK</div><h2>从一条消息开始，<br><span>拆开每个齿轮。</span></h2></div><p>{{ len (where .Site.RegularPages "Section" "posts") }} notes<br>源码驱动的阅读路径</p></div>
+  <div class="article-list">
+    {{ range where .Site.RegularPages "Section" "posts" }}
+      <a class="article-row" href="{{ .RelPermalink }}">
+        <span class="article-index">{{ printf "%02d" .Params.order }}</span>
+        <div class="article-main"><div class="article-meta"><span>{{ .Params.eyebrow }}</span><span>{{ .ReadingTime }} MIN READ</span></div><h3>{{ .Title }}</h3><p>{{ .Description }}</p></div>
+        <span class="article-arrow">↗</span>
+      </a>
+    {{ end }}
+  </div>
+</section>
+
+<section class="section shell closing-section">
+  <div class="closing-card"><div class="closing-mark">//</div><div><div class="section-kicker">OPEN SOURCE, OPEN TRACE</div><h2>想从哪个模块<br><em>开始走读？</em></h2></div><a class="button button-dark" href="{{ .Site.Params.github }}" target="_blank" rel="noreferrer">进入仓库 <span>↗</span></a></div>
+</section>
+{{ end }}
