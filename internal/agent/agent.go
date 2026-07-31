@@ -6,11 +6,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"LongCat-frontend/internal/frontend"
 	"LongCat-frontend/internal/llm"
+	"LongCat-frontend/internal/mcp"
 	"LongCat-frontend/internal/skills"
+	"LongCat-frontend/internal/workspace"
 )
 
 const systemPrompt = `你是 LongCat —— 一个智能、高效、全能的 AI 助手。
@@ -54,6 +57,14 @@ type Session struct {
 	ActiveSkill string
 	// Workspace 当前工作空间路径，空表示无工作空间。
 	Workspace string
+	// MCP is the project-scoped external tool registry.
+	MCP *mcp.Manager
+	// Agents contains discovered sub-agent definitions with precedence applied.
+	Agents             []AgentDefinition
+	Activity           *ActivityTracker
+	OrchestrationDepth int
+	Undo               *workspace.UndoStore
+	DefinitionOverride string
 }
 
 // ToolEvent describes one tool invocation for clients that want to render the
@@ -126,7 +137,19 @@ func NewSession(m *llm.Manager, skillsDir string) (*Session, error) {
 			loaded = append(loaded, s...)
 		}
 	}
-	return &Session{Manager: m, Skills: loaded}, nil
+	var agents []AgentDefinition
+	userAgents := ""
+	if dir, err := llm.ConfigDir(); err == nil {
+		userAgents = filepath.Join(dir, "agents")
+	}
+	bundledAgents := ""
+	if skillsDir != "" {
+		bundledAgents = filepath.Join(filepath.Dir(skillsDir), "agents")
+	}
+	if discovered, err := DiscoverAgents("", userAgents, bundledAgents); err == nil {
+		agents = discovered
+	}
+	return &Session{Manager: m, Skills: loaded, Agents: agents, Activity: NewActivityTracker()}, nil
 }
 
 // buildSystem 组装系统提示：基础提示 + 当前模式 + 工作空间 + 技能正文。
@@ -134,6 +157,10 @@ func NewSession(m *llm.Manager, skillsDir string) (*Session, error) {
 func (s *Session) buildSystem(userInput string) string {
 	var b strings.Builder
 	b.WriteString(systemPrompt)
+	if s.DefinitionOverride != "" {
+		b.WriteString("\n\n## 当前 Agent 专长\n")
+		b.WriteString(s.DefinitionOverride)
+	}
 	if s.Workspace != "" {
 		b.WriteString("\n\n## 当前工作空间\n")
 		b.WriteString(fmt.Sprintf("你当前正在工作空间 `%s` 中工作。所有文件操作和代码编辑都应该在这个目录下进行。", s.Workspace))
@@ -161,6 +188,12 @@ func (s *Session) buildSystem(userInput string) string {
 		b.WriteString("\n\n## 相关技能\n")
 		for _, sk := range matched {
 			b.WriteString(fmt.Sprintf("- `%s`: %s（需要时调用 load_skill）\n", sk.Name, sk.Description))
+		}
+	}
+	if len(s.Agents) > 0 {
+		b.WriteString("\n\n## 可委派的子 Agent\n需要专门角色时调用 `spawn_subagent`，并提供名称和清晰任务。\n")
+		for _, definition := range s.Agents {
+			b.WriteString(fmt.Sprintf("- `%s`: %s\n", definition.Name, definition.Description))
 		}
 	}
 	return b.String()
@@ -197,7 +230,7 @@ func (s *Session) AskWithAttachments(ctx context.Context, input string, attachme
 	msgs = append(msgs, s.Messages...)
 	msgs = append(msgs, llm.Message{Role: "user", Content: input, Attachments: attachments})
 
-	exec := &ToolExecutor{Workspace: s.Workspace, Skills: s.Skills}
+	exec := &ToolExecutor{Workspace: s.Workspace, Skills: s.Skills, MCP: s.MCP, Undo: s.Undo, Agents: s.Agents, Manager: s.Manager, Activity: s.Activity, OrchestrationDepth: s.OrchestrationDepth}
 	var reply string
 	for round := 0; round < 8; round++ {
 		if err := ctx.Err(); err != nil {
@@ -230,7 +263,7 @@ func (s *Session) AskWithAttachments(ctx context.Context, input string, attachme
 			if onTool != nil {
 				onTool(ToolEvent{ID: callID, Name: call.Function.Name, Arguments: call.Function.Arguments, Status: "running", Round: round + 1})
 			}
-			out, callErr := exec.Execute(call.Function.Name, call.Function.Arguments)
+			out, callErr := exec.ExecuteContext(ctx, call.Function.Name, call.Function.Arguments)
 			status := "success"
 			if callErr != nil {
 				out = "工具执行失败: " + callErr.Error()

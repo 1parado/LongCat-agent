@@ -10,6 +10,13 @@
 //	POST   /api/providers/{id}/use    切换当前供应商
 //	POST   /api/chat                  对话（SSE 流式：event data 为文本增量）
 //	POST   /api/reset                 重置会话
+//	GET    /api/preview/state         预览历史状态
+//	POST   /api/preview/navigate      记录预览导航
+//	POST   /api/preview/back|forward  预览历史导航
+//	GET    /api/workspace/events      工作区变更 SSE
+//	GET    /api/workspace/diff        Agent 文件差异
+//	GET/POST /api/workspace/undo      撤销历史与最近写入
+//	GET/POST/DELETE /api/mcp          MCP 配置与健康信息
 package server
 
 import (
@@ -27,7 +34,11 @@ import (
 	"time"
 
 	"LongCat-frontend/internal/agent"
+	"LongCat-frontend/internal/cache"
+	"LongCat-frontend/internal/i18n"
+	"LongCat-frontend/internal/im"
 	"LongCat-frontend/internal/llm"
+	"LongCat-frontend/internal/mcp"
 	"LongCat-frontend/internal/skills"
 	"LongCat-frontend/internal/workspace"
 )
@@ -42,6 +53,13 @@ type api struct {
 	workspaces      *workspace.Store
 	activeWorkspace workspace.Workspace
 	activeSessionID string
+	watcher         *workspace.Watcher
+	undo            *workspace.UndoStore
+	mcp             *mcp.Manager
+	im              *im.Bridge
+	cache           *cache.Cache[string, any]
+	locale          i18n.Locale
+	settingsPath    string
 	cancelMu        sync.Mutex
 	cancel          context.CancelFunc
 	mu              sync.Mutex // 串行化对话，轻量会话无需并发
@@ -57,7 +75,27 @@ func Run(addr string, m *llm.Manager, s *agent.Session) error {
 	if err != nil {
 		return fmt.Errorf("初始化工作空间存储失败: %w", err)
 	}
-	a := &api{manager: m, session: s, market: mkt, workspaces: ws}
+	undo, err := workspace.NewUndoStore()
+	if err != nil {
+		return fmt.Errorf("初始化撤销存储失败: %w", err)
+	}
+	mcpManager := mcp.NewManager("")
+	_ = mcpManager.Load()
+	imBridge, err := im.NewBridge()
+	if err != nil {
+		return fmt.Errorf("初始化 IM Bridge 失败: %w", err)
+	}
+	locale := i18n.DetectSystem()
+	settingsPath := ""
+	if dir, configErr := llm.ConfigDir(); configErr == nil {
+		settingsPath = filepath.Join(dir, "settings.json")
+		if pref, prefErr := i18n.LoadPreference(settingsPath); prefErr == nil && pref != i18n.PreferenceSystem {
+			locale = i18n.Normalize(i18n.Locale(pref))
+		}
+	}
+	s.MCP, s.Undo, s.Activity = mcpManager, undo, agent.NewActivityTracker()
+	a := &api{manager: m, session: s, market: mkt, workspaces: ws, undo: undo, mcp: mcpManager, im: imBridge, cache: cache.New[string, any](5*time.Minute, 1000), locale: locale, settingsPath: settingsPath}
+	mcpManager.StartHealthChecks(context.Background(), 30*time.Second)
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /", a.index)
@@ -79,6 +117,10 @@ func Run(addr string, m *llm.Manager, s *agent.Session) error {
 	mux.HandleFunc("GET /api/workspace", a.getWorkspace)
 	mux.HandleFunc("GET /api/preview-file", a.previewFile)
 	mux.HandleFunc("GET /api/preview/{path...}", a.previewFile)
+	mux.HandleFunc("GET /api/preview/state", a.previewState)
+	mux.HandleFunc("POST /api/preview/navigate", a.previewNavigate)
+	mux.HandleFunc("POST /api/preview/back", a.previewBack)
+	mux.HandleFunc("POST /api/preview/forward", a.previewForward)
 	mux.HandleFunc("POST /api/workspace", a.setWorkspace)
 	mux.HandleFunc("GET /api/workspaces", a.listWorkspaces)
 	mux.HandleFunc("POST /api/workspaces/open", a.openWorkspace)
@@ -88,6 +130,27 @@ func Run(addr string, m *llm.Manager, s *agent.Session) error {
 	mux.HandleFunc("PUT /api/sessions/{id}", a.updateSession)
 	mux.HandleFunc("POST /api/sessions/{id}/use", a.useSession)
 	mux.HandleFunc("DELETE /api/sessions/{id}", a.deleteSession)
+	mux.HandleFunc("GET /api/workspace/events", a.workspaceEvents)
+	mux.HandleFunc("GET /api/workspace/diff", a.workspaceDiff)
+	mux.HandleFunc("GET /api/workspace/undo", a.workspaceUndoList)
+	mux.HandleFunc("POST /api/workspace/undo", a.workspaceUndo)
+	mux.HandleFunc("GET /api/mcp", a.mcpState)
+	mux.HandleFunc("POST /api/mcp", a.mcpUpsert)
+	mux.HandleFunc("DELETE /api/mcp/{id}", a.mcpRemove)
+	mux.HandleFunc("POST /api/mcp/refresh", a.mcpRefresh)
+	mux.HandleFunc("GET /api/im/state", a.imState)
+	mux.HandleFunc("POST /api/im/start", a.imStart)
+	mux.HandleFunc("POST /api/im/stop", a.imStop)
+	mux.HandleFunc("GET /api/im/instances", a.imInstances)
+	mux.HandleFunc("POST /api/im/instances", a.imSaveInstance)
+	mux.HandleFunc("DELETE /api/im/instances/{id}", a.imDeleteInstance)
+	mux.HandleFunc("POST /api/im/scan/begin", a.imScanBegin)
+	mux.HandleFunc("POST /api/im/scan/poll", a.imScanPoll)
+	mux.HandleFunc("GET /api/im/doctor", a.imDoctor)
+	mux.HandleFunc("GET /api/cache/stats", a.cacheStats)
+	mux.HandleFunc("DELETE /api/cache/invalidate", a.cacheInvalidate)
+	mux.HandleFunc("GET /api/settings/locale", a.getLocale)
+	mux.HandleFunc("PUT /api/settings/locale", a.setLocale)
 
 	srv := &http.Server{Addr: addr, Handler: local(mux)}
 	return srv.ListenAndServe()
@@ -193,6 +256,108 @@ func (a *api) previewFile(w http.ResponseWriter, r *http.Request) {
 	http.ServeContent(w, r, filepath.Base(target), info.ModTime().Round(time.Second), file)
 }
 
+type previewInput struct {
+	URL string `json:"url"`
+}
+
+func (a *api) previewState(w http.ResponseWriter, _ *http.Request) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.activeSessionID == "" {
+		writeJSON(w, http.StatusOK, workspace.PreviewState{Index: -1})
+		return
+	}
+	r, ok := a.workspaces.GetSession(a.activeSessionID)
+	if !ok {
+		writeErr(w, http.StatusNotFound, errors.New("会话不存在"))
+		return
+	}
+	writeJSON(w, http.StatusOK, r.Preview)
+}
+
+func (a *api) previewNavigate(w http.ResponseWriter, r *http.Request) {
+	var in previewInput
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil || strings.TrimSpace(in.URL) == "" {
+		writeErr(w, http.StatusBadRequest, errors.New("预览地址不能为空"))
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	state, err := a.updatePreviewLocked(in.URL, true)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, state)
+}
+
+func (a *api) previewBack(w http.ResponseWriter, _ *http.Request)    { a.movePreview(w, -1) }
+func (a *api) previewForward(w http.ResponseWriter, _ *http.Request) { a.movePreview(w, 1) }
+
+func (a *api) movePreview(w http.ResponseWriter, direction int) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.activeSessionID == "" {
+		writeErr(w, http.StatusBadRequest, errors.New("请先创建会话"))
+		return
+	}
+	r, ok := a.workspaces.GetSession(a.activeSessionID)
+	if !ok {
+		writeErr(w, http.StatusNotFound, errors.New("会话不存在"))
+		return
+	}
+	next := r.Preview.Index + direction
+	if next < 0 || next >= len(r.Preview.History) {
+		writeJSON(w, http.StatusOK, r.Preview)
+		return
+	}
+	r.Preview.Index = next
+	r.Preview.CurrentURL = r.Preview.History[next]
+	if err := a.workspaces.SaveSession(r); err != nil {
+		writeErr(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, r.Preview)
+}
+
+func (a *api) updatePreviewLocked(rawURL string, persist bool) (workspace.PreviewState, error) {
+	if a.activeSessionID == "" {
+		return workspace.PreviewState{}, errors.New("请先创建会话")
+	}
+	r, ok := a.workspaces.GetSession(a.activeSessionID)
+	if !ok {
+		return workspace.PreviewState{}, errors.New("会话不存在")
+	}
+	value := strings.TrimSpace(rawURL)
+	if value == "" {
+		return r.Preview, errors.New("预览地址不能为空")
+	}
+	state := r.Preview
+	if len(state.History) == 0 {
+		state.History = []string{value}
+		state.Index = 0
+	} else if state.Index >= 0 && state.Index < len(state.History) && state.History[state.Index] == value { /* no-op */
+	} else {
+		if state.Index >= 0 && state.Index+1 < len(state.History) {
+			state.History = append([]string(nil), state.History[:state.Index+1]...)
+		}
+		state.History = append(state.History, value)
+		state.Index = len(state.History) - 1
+		if len(state.History) > 100 {
+			state.History = state.History[len(state.History)-100:]
+			state.Index = len(state.History) - 1
+		}
+	}
+	state.CurrentURL = value
+	r.Preview = state
+	if persist {
+		if err := a.workspaces.SaveSession(r); err != nil {
+			return state, err
+		}
+	}
+	return state, nil
+}
+
 func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(code)
@@ -239,6 +404,10 @@ func (a *api) state(w http.ResponseWriter, _ *http.Request) {
 		ws = a.activeWorkspace
 		sessions = a.workspaces.ListSessions(a.activeWorkspace.ID)
 	}
+	activity := []agent.SubagentActivity{}
+	if a.session != nil && a.session.Activity != nil {
+		activity = a.session.Activity.List()
+	}
 	writeJSON(w, 200, map[string]any{
 		"providers":         views,
 		"skills":            skills,
@@ -247,7 +416,220 @@ func (a *api) state(w http.ResponseWriter, _ *http.Request) {
 		"workspaces":        a.workspaces.ListWorkspaces(),
 		"sessions":          sessions,
 		"active_session_id": a.activeSessionID,
+		"mcp":               a.mcpStateValue(),
+		"im":                a.imStateValue(),
+		"agent_activity":    activity,
+		"locale":            string(a.locale),
 	})
+}
+
+func (a *api) mcpStateValue() []mcp.MCPServer {
+	if a.mcp == nil {
+		return []mcp.MCPServer{}
+	}
+	return a.mcp.List()
+}
+
+func (a *api) mcpState(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{"servers": a.mcpStateValue()})
+}
+func (a *api) mcpRefresh(w http.ResponseWriter, r *http.Request) {
+	if a.mcp == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"servers": []mcp.MCPServer{}})
+		return
+	}
+	reports := a.mcp.Refresh(r.Context())
+	writeJSON(w, http.StatusOK, map[string]any{"servers": a.mcp.List(), "reports": reports})
+}
+
+func (a *api) mcpUpsert(w http.ResponseWriter, r *http.Request) {
+	if a.mcp == nil {
+		writeErr(w, http.StatusNotImplemented, errors.New("MCP 未启用"))
+		return
+	}
+	var server mcp.MCPServer
+	if err := json.NewDecoder(r.Body).Decode(&server); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := a.mcp.UpsertProjectServer(server); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (a *api) mcpRemove(w http.ResponseWriter, r *http.Request) {
+	if a.mcp == nil {
+		writeErr(w, http.StatusNotImplemented, errors.New("MCP 未启用"))
+		return
+	}
+	if err := a.mcp.RemoveProjectServer(r.PathValue("id")); err != nil {
+		writeErr(w, http.StatusNotFound, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (a *api) imStateValue() im.BridgeStatus {
+	if a.im == nil {
+		return im.BridgeStatus{State: "unavailable", Backend: "none"}
+	}
+	return a.im.Status()
+}
+func (a *api) imState(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{"bridge": a.imStateValue(), "instances": a.imInstancesValue()})
+}
+func (a *api) imInstancesValue() []im.ChannelInstance {
+	if a.im == nil {
+		return []im.ChannelInstance{}
+	}
+	return a.im.ListInstances()
+}
+func (a *api) imStart(w http.ResponseWriter, _ *http.Request) {
+	if a.im == nil {
+		writeErr(w, http.StatusNotImplemented, errors.New("IM Bridge 未启用"))
+		return
+	}
+	writeJSON(w, http.StatusOK, a.im.Start())
+}
+func (a *api) imStop(w http.ResponseWriter, _ *http.Request) {
+	if a.im == nil {
+		writeErr(w, http.StatusNotImplemented, errors.New("IM Bridge 未启用"))
+		return
+	}
+	writeJSON(w, http.StatusOK, a.im.Stop())
+}
+func (a *api) imInstances(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{"instances": a.imInstancesValue()})
+}
+
+func (a *api) imSaveInstance(w http.ResponseWriter, r *http.Request) {
+	if a.im == nil {
+		writeErr(w, http.StatusNotImplemented, errors.New("IM Bridge 未启用"))
+		return
+	}
+	var input struct {
+		Instance         im.ChannelInstance `json:"instance"`
+		Secrets          map[string]string  `json:"secrets"`
+		ConnectAfterSave bool               `json:"connect_after_save"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	saved, err := a.im.SaveInstance(input.Instance, input.Secrets, input.ConnectAfterSave)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, saved)
+}
+func (a *api) imDeleteInstance(w http.ResponseWriter, r *http.Request) {
+	if a.im == nil {
+		writeErr(w, http.StatusNotImplemented, errors.New("IM Bridge 未启用"))
+		return
+	}
+	if err := a.im.DeleteInstance(r.PathValue("id")); err != nil {
+		writeErr(w, http.StatusNotFound, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (a *api) imScanBegin(w http.ResponseWriter, r *http.Request) {
+	if a.im == nil {
+		writeErr(w, http.StatusNotImplemented, errors.New("IM Bridge 未启用"))
+		return
+	}
+	var input struct {
+		Channel string            `json:"channel"`
+		Options map[string]string `json:"options"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	result, err := a.im.ScanBegin(r.Context(), im.RemoteChannelID(input.Channel), input.Options)
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+func (a *api) imScanPoll(w http.ResponseWriter, r *http.Request) {
+	if a.im == nil {
+		writeErr(w, http.StatusNotImplemented, errors.New("IM Bridge 未启用"))
+		return
+	}
+	var input struct {
+		Channel    string `json:"channel"`
+		DeviceCode string `json:"device_code"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	result, err := a.im.ScanPoll(r.Context(), im.RemoteChannelID(input.Channel), input.DeviceCode)
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+func (a *api) imDoctor(w http.ResponseWriter, _ *http.Request) {
+	if a.im == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "instances": []any{}})
+		return
+	}
+	writeJSON(w, http.StatusOK, a.im.Doctor())
+}
+
+func (a *api) cacheStats(w http.ResponseWriter, _ *http.Request) {
+	if a.cache == nil {
+		writeJSON(w, http.StatusOK, cache.Stats{})
+		return
+	}
+	writeJSON(w, http.StatusOK, a.cache.Stats())
+}
+func (a *api) cacheInvalidate(w http.ResponseWriter, r *http.Request) {
+	if a.cache != nil {
+		key := r.URL.Query().Get("key")
+		if key == "" {
+			a.cache.Clear()
+		} else {
+			a.cache.Delete(key)
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (a *api) getLocale(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]string{"locale": string(a.locale)})
+}
+func (a *api) setLocale(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Locale string `json:"locale"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	preference := i18n.Preference(in.Locale)
+	locale := i18n.DetectSystem()
+	if preference != i18n.PreferenceSystem {
+		locale = i18n.Normalize(i18n.Locale(preference))
+	}
+	if a.settingsPath != "" {
+		if err := i18n.SavePreference(a.settingsPath, preference); err != nil {
+			writeErr(w, http.StatusInternalServerError, err)
+			return
+		}
+	}
+	a.mu.Lock()
+	a.locale = locale
+	a.mu.Unlock()
+	writeJSON(w, http.StatusOK, map[string]string{"locale": string(locale), "preference": string(preference)})
 }
 
 type providerInput struct {
@@ -576,7 +958,101 @@ func (a *api) getWorkspace(w http.ResponseWriter, _ *http.Request) {
 		"sessions":          a.workspaces.ListSessions(a.activeWorkspace.ID),
 		"active_session_id": a.activeSessionID,
 		"messages":          append([]llm.Message{}, a.session.Messages...),
+		"preview":           a.previewForActiveLocked(),
 	})
+}
+
+func (a *api) previewForActiveLocked() workspace.PreviewState {
+	if a.activeSessionID == "" {
+		return workspace.PreviewState{Index: -1}
+	}
+	if r, ok := a.workspaces.GetSession(a.activeSessionID); ok {
+		return r.Preview
+	}
+	return workspace.PreviewState{Index: -1}
+}
+
+func (a *api) workspaceEvents(w http.ResponseWriter, r *http.Request) {
+	a.mu.Lock()
+	watcher := a.watcher
+	a.mu.Unlock()
+	if watcher == nil {
+		writeErr(w, http.StatusBadRequest, errors.New("请先打开一个工作空间"))
+		return
+	}
+	ch, unsubscribe := watcher.Subscribe()
+	defer unsubscribe()
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeErr(w, http.StatusInternalServerError, errors.New("streaming unsupported"))
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	for {
+		select {
+		case event, open := <-ch:
+			if !open {
+				return
+			}
+			data, _ := json.Marshal(event)
+			fmt.Fprintf(w, "event: change\ndata: %s\n\n", data)
+			flusher.Flush()
+		case <-r.Context().Done():
+			return
+		}
+	}
+}
+
+func (a *api) workspaceDiff(w http.ResponseWriter, r *http.Request) {
+	a.mu.Lock()
+	root := a.activeWorkspace.Path
+	undo := a.undo
+	a.mu.Unlock()
+	if root == "" {
+		writeErr(w, http.StatusBadRequest, errors.New("请先打开一个工作空间"))
+		return
+	}
+	path := strings.TrimSpace(r.URL.Query().Get("path"))
+	if path == "" {
+		writeErr(w, http.StatusBadRequest, errors.New("path 不能为空"))
+		return
+	}
+	diff, err := undo.Diff(root, path)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, diff)
+}
+
+func (a *api) workspaceUndoList(w http.ResponseWriter, _ *http.Request) {
+	a.mu.Lock()
+	root := a.activeWorkspace.Path
+	undo := a.undo
+	a.mu.Unlock()
+	if root == "" {
+		writeJSON(w, http.StatusOK, []workspace.UndoEntry{})
+		return
+	}
+	writeJSON(w, http.StatusOK, undo.List(root))
+}
+func (a *api) workspaceUndo(w http.ResponseWriter, _ *http.Request) {
+	a.mu.Lock()
+	root := a.activeWorkspace.Path
+	undo := a.undo
+	a.mu.Unlock()
+	if root == "" {
+		writeErr(w, http.StatusBadRequest, errors.New("请先打开一个工作空间"))
+		return
+	}
+	entry, err := undo.UndoLast(root)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "entry": entry})
 }
 
 func (a *api) setWorkspace(w http.ResponseWriter, r *http.Request) {
@@ -637,7 +1113,39 @@ func (a *api) openFolder(path string) error {
 		}
 		sessions = []workspace.SessionRecord{r}
 	}
-	return a.activateSessionLocked(sessions[0].ID)
+	if err := a.activateSessionLocked(sessions[0].ID); err != nil {
+		return err
+	}
+	return a.configureWorkspaceLocked(w.Path)
+}
+
+func (a *api) configureWorkspaceLocked(root string) error {
+	if a.watcher == nil || !workspaceSameRoot(a.watcher.Root(), root) {
+		if a.watcher != nil {
+			a.watcher.Stop()
+		}
+		watcher, err := workspace.NewWatcher(root, 500*time.Millisecond)
+		if err != nil {
+			return err
+		}
+		a.watcher = watcher
+		watcher.Start(context.Background())
+	}
+	if a.mcp != nil {
+		_ = a.mcp.SetWorkspace(root)
+	}
+	if dir, err := llm.ConfigDir(); err == nil {
+		if discovered, discoverErr := agent.DiscoverAgents(root, filepath.Join(dir, "agents"), ""); discoverErr == nil {
+			a.session.Agents = discovered
+		}
+	}
+	return nil
+}
+
+func workspaceSameRoot(aPath, bPath string) bool {
+	aa, _ := filepath.Abs(aPath)
+	bb, _ := filepath.Abs(bPath)
+	return strings.EqualFold(filepath.Clean(aa), filepath.Clean(bb))
 }
 
 func (a *api) listSessions(w http.ResponseWriter, _ *http.Request) {
@@ -812,5 +1320,10 @@ func (a *api) activateSessionLocked(id string) error {
 	a.session.Messages = append([]llm.Message(nil), r.Messages...)
 	a.session.Mode = r.Mode
 	a.session.ActiveSkill = r.ActiveSkill
+	a.session.Undo = a.undo
+	a.session.MCP = a.mcp
+	if a.session.Activity == nil {
+		a.session.Activity = agent.NewActivityTracker()
+	}
 	return nil
 }

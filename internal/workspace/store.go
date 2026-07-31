@@ -31,6 +31,13 @@ type SessionRecord struct {
 	Messages    []llm.Message `json:"messages"`
 	Mode        string        `json:"mode,omitempty"`
 	ActiveSkill string        `json:"active_skill,omitempty"`
+	Preview     PreviewState  `json:"preview,omitempty"`
+}
+
+type PreviewState struct {
+	CurrentURL string   `json:"current_url,omitempty"`
+	History    []string `json:"history,omitempty"`
+	Index      int      `json:"index,omitempty"`
 }
 
 type state struct {

@@ -10,9 +10,10 @@ desktop/src-tauri/target/
 # ---- 内部工作区（Agent 记忆、日志等，勿提交）----
 .workbuddy/
 
-# ---- 文档（仅保留 README.md 进版本库，其余 .md 不提交）----
+# ---- 文档（仅保留 README.md 和 AGENTS.md 进版本库，其余 .md 不提交）----
 *.md
 !README.md
+!AGENTS.md
 
 # ---- 敏感信息 ----
 # 环境变量 / 密钥 / 证书

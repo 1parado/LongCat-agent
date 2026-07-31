@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -12,6 +13,43 @@ import (
 	"LongCat-frontend/internal/agent"
 	"LongCat-frontend/internal/workspace"
 )
+
+func TestPreviewNavigationPersistsAndMoves(t *testing.T) {
+	root := t.TempDir()
+	store, err := workspace.NewStoreAt(filepath.Join(t.TempDir(), "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	w, err := store.OpenFolder(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := store.CreateSession(w.ID, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := &api{session: &agent.Session{}, workspaces: store, activeWorkspace: w, activeSessionID: session.ID}
+	for _, value := range []string{"/api/preview/a.html", "/api/preview/b.html"} {
+		req := httptest.NewRequest(http.MethodPost, "/api/preview/navigate", bytes.NewBufferString(`{"url":"`+value+`"}`))
+		rec := httptest.NewRecorder()
+		a.previewNavigate(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("navigate %s status=%d body=%s", value, rec.Code, rec.Body.String())
+		}
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/preview/back", nil)
+	rec := httptest.NewRecorder()
+	a.previewBack(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "a.html") {
+		t.Fatalf("back status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	req = httptest.NewRequest(http.MethodPost, "/api/preview/forward", nil)
+	rec = httptest.NewRecorder()
+	a.previewForward(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "b.html") {
+		t.Fatalf("forward status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
 
 func TestPreviewFileServesActiveWorkspace(t *testing.T) {
 	root := t.TempDir()

@@ -362,6 +362,23 @@ html[data-wallpaper="1"] .composer{background:color-mix(in srgb,var(--bg-input) 
 .wallpaper-control{padding:12px 0 2px;border-top:1px solid var(--border-subtle);margin-top:14px}.wallpaper-control-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;color:var(--text-secondary);font-size:11px}.wallpaper-control-value{color:var(--accent-hover);font-variant-numeric:tabular-nums}.wallpaper-range{width:100%;accent-color:var(--accent);cursor:pointer}.wallpaper-hint{color:var(--text-tertiary);font-size:10px;line-height:1.5;margin-top:10px}
 .modal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
 .modal-head h2{font-size:var(--text-lg);font-weight:600}
+.control-modal{width:min(780px,calc(100vw - 28px));max-height:88vh;padding:18px 20px}
+.control-kicker{color:var(--text-tertiary);font-size:10px;letter-spacing:.08em;text-transform:uppercase;margin-top:-10px;margin-bottom:14px}
+.control-section{border-top:1px solid var(--border-subtle);padding:13px 0 3px}
+.control-section-head{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.control-section-head h3{font-size:12px;font-weight:600;margin:0;color:var(--text-primary)}
+.control-section-head .grow{flex:1}.control-section-head small{font-size:10px;color:var(--text-tertiary)}
+.signal-row{display:flex;align-items:center;gap:9px;min-height:32px;padding:6px 8px;border-radius:var(--radius-md);background:color-mix(in srgb,var(--bg-elevated) 75%,transparent);margin-bottom:5px}
+.signal-rail{width:3px;align-self:stretch;min-height:19px;border-radius:var(--radius-full);background:var(--text-tertiary);flex-shrink:0}
+.signal-rail.ok{background:var(--success);box-shadow:0 0 7px color-mix(in srgb,var(--success) 55%,transparent)}
+.signal-rail.warn{background:var(--warning)}.signal-rail.fail{background:var(--danger)}.signal-rail.auth{background:#b48cff}
+.signal-main{min-width:0;flex:1}.signal-title{display:block;color:var(--text-primary);font-size:11px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.signal-meta{display:block;color:var(--text-tertiary);font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}.signal-action{flex-shrink:0}
+.control-empty{color:var(--text-tertiary);font-size:11px;padding:7px 8px;border:1px dashed var(--border-subtle);border-radius:var(--radius-md)}
+.control-actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.control-actions .form-select{width:auto;min-width:120px;padding:6px 8px}.control-actions .form-input{width:auto;min-width:150px;padding:6px 8px}
+.control-status{font-size:11px;color:var(--text-secondary);margin-left:auto}.control-status.ok{color:var(--success)}.control-status.warn{color:var(--warning)}.control-status.fail{color:var(--danger)}
+.control-qr{display:none;align-items:center;gap:14px;margin-top:10px;padding:10px;border:1px solid var(--border-subtle);border-radius:var(--radius-md);background:var(--bg-elevated)}
+.control-qr.open{display:flex}.control-qr img{width:150px;height:150px;background:#fff;border-radius:5px;padding:5px;image-rendering:auto}.control-qr-copy{min-width:0;flex:1;color:var(--text-secondary);font-size:11px;line-height:1.5}.control-qr-copy strong{display:block;color:var(--text-primary);margin-bottom:4px}.control-qr-copy code{font:10px var(--font-mono);word-break:break-all;color:var(--accent-hover)}
+.control-diff{display:none;max-height:180px;overflow:auto;margin:8px 0 0;padding:10px;background:var(--bg-code);border:1px solid var(--border-subtle);border-radius:var(--radius-md);font:10px/1.45 var(--font-mono);color:var(--text-secondary);white-space:pre-wrap}.control-diff.open{display:block}
 
 /* Provider table */
 .ptable{width:100%;border-collapse:collapse;margin-bottom:18px}
@@ -433,6 +450,32 @@ html[data-wallpaper="1"] .composer{background:color-mix(in srgb,var(--bg-input) 
 .skill-card-desc{color:var(--text-secondary);font-size:var(--text-xs);line-height:1.5;flex:1}
 .skill-card-actions{display:flex;gap:6px;margin-top:4px}
 .sp-back{margin-bottom:12px}
+
+/* IM platform onboarding */
+.im-pane{flex:1;display:none;flex-direction:column;padding:0 32px;overflow-y:auto}
+.im-pane.open{display:flex}
+.im-pane-head{display:flex;align-items:flex-start;gap:14px;padding:22px 0 12px}
+.im-pane-head h2{font-size:20px;letter-spacing:-.02em;margin:0 0 5px}
+.im-pane-kicker{color:var(--text-tertiary);font:10px var(--font-mono);letter-spacing:.08em;text-transform:uppercase}
+.im-pane-intro{max-width:650px;color:var(--text-secondary);font-size:12px;line-height:1.6;margin:0 0 18px}
+.im-platform-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:18px}
+.im-platform-card{position:relative;min-height:148px;padding:14px;border:1px solid var(--border-subtle);border-radius:var(--radius-lg);background:linear-gradient(145deg,color-mix(in srgb,var(--bg-elevated) 88%,transparent),color-mix(in srgb,var(--bg-code) 70%,transparent));overflow:hidden;transition:border var(--motion-fast),transform var(--motion-fast),background var(--motion-fast)}
+.im-platform-card::before{content:'';position:absolute;inset:0 auto 0 0;width:3px;background:var(--text-tertiary);opacity:.65}
+.im-platform-card:hover,.im-platform-card.selected{border-color:var(--accent);background:color-mix(in srgb,var(--accent-muted) 22%,var(--bg-elevated));transform:translateY(-1px)}
+.im-platform-card.selected::before{background:var(--accent);opacity:1;box-shadow:0 0 12px var(--accent)}
+.im-platform-top{display:flex;align-items:center;gap:9px;margin-bottom:12px}
+.im-platform-mark{display:grid;place-items:center;width:28px;height:28px;border-radius:8px;background:var(--bg-active);color:var(--accent-hover);font-size:12px;font-weight:700}
+.im-platform-name{font-size:13px;font-weight:650}.im-platform-state{margin-left:auto;color:var(--text-tertiary);font-size:10px}
+.im-platform-state.ok{color:var(--success)}.im-platform-state.warn{color:var(--warning)}
+.im-platform-copy{min-height:38px;color:var(--text-secondary);font-size:11px;line-height:1.5;margin-bottom:12px}
+.im-platform-meta{color:var(--text-tertiary);font:10px var(--font-mono);margin-bottom:10px}
+.im-connect-card{border-top:1px solid var(--border-subtle);padding:17px 0 19px}
+.im-connect-head{display:flex;align-items:baseline;gap:10px;margin-bottom:10px}.im-connect-head h3{font-size:13px;margin:0}.im-connect-head span{color:var(--text-tertiary);font-size:10px}
+.im-connect-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.im-connect-actions .form-select{min-width:145px}.im-connect-actions .form-input{min-width:180px;flex:1}
+.im-pane-qr{display:none;align-items:center;gap:15px;margin-top:12px;padding:12px;border:1px solid var(--border-subtle);border-radius:var(--radius-lg);background:var(--bg-elevated)}
+.im-pane-qr.open{display:flex}.im-pane-qr img{width:156px;height:156px;padding:6px;border-radius:7px;background:#fff}.im-pane-qr-copy{min-width:0;color:var(--text-secondary);font-size:11px;line-height:1.55}.im-pane-qr-copy strong{display:block;color:var(--text-primary);font-size:12px;margin-bottom:5px}.im-pane-qr-copy code{display:block;color:var(--accent-hover);font:10px/1.45 var(--font-mono);word-break:break-all;margin-top:6px}
+.im-pane-instances{border-top:1px solid var(--border-subtle);padding:15px 0 28px}.im-pane-instances-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}.im-pane-instances-head h3{font-size:13px;margin:0}.im-pane-bridge-state{font-size:10px;color:var(--text-tertiary)}.im-pane-bridge-state.ok{color:var(--success)}
+@media(max-width:760px){.im-platform-grid{grid-template-columns:1fr}.im-pane{padding:0 18px}.im-pane-qr{align-items:flex-start}.im-pane-qr img{width:128px;height:128px}}
 
 /* Skills Popup */
 .skills-popup{position:fixed;top:0;left:0;right:0;bottom:0;z-index:2000;display:flex;align-items:center;justify-content:center}
@@ -568,6 +611,52 @@ html[data-wallpaper="1"] .composer{background:color-mix(in srgb,var(--bg-input) 
     <div class="sp-body" id="skillsBody"></div>
   </div>
 
+  <!-- IM Platform Pane -->
+  <div class="im-pane" id="imPane">
+    <div class="im-pane-head">
+      <div>
+        <div class="im-pane-kicker" data-i18n="imPaneKicker">REMOTE CHANNELS / ONBOARDING</div>
+        <h2 data-i18n="imPaneTitle">IM 平台</h2>
+        <p class="im-pane-intro" data-i18n="imPaneIntro">选择一个平台，使用二维码完成接入。凭据会保存在本机，Agent 可以通过桥接服务响应对应会话。</p>
+      </div>
+      <span class="grow"></span>
+      <button class="icon-btn" onclick="closeIMPane()" title="关闭">✕</button>
+    </div>
+    <div class="im-platform-grid">
+      <article class="im-platform-card" data-platform-card="feishu">
+        <div class="im-platform-top"><span class="im-platform-mark">飞</span><span class="im-platform-name">Feishu</span><span class="im-platform-state" id="imPaneStateFeishu">—</span></div>
+        <div class="im-platform-copy" data-i18n="imFeishuDesc">飞书个人 Agent：扫码授权并自动创建应用凭据。</div>
+        <div class="im-platform-meta">PersonalAgent · OAuth QR</div>
+        <button class="btn" onclick="selectIMChannel('feishu')" data-i18n="configureIM">配置接入</button>
+      </article>
+      <article class="im-platform-card" data-platform-card="lark">
+        <div class="im-platform-top"><span class="im-platform-mark">L</span><span class="im-platform-name">Lark</span><span class="im-platform-state" id="imPaneStateLark">—</span></div>
+        <div class="im-platform-copy" data-i18n="imLarkDesc">Lark Personal Agent：使用国际版账号体系扫码登录。</div>
+        <div class="im-platform-meta">PersonalAgent · OAuth QR</div>
+        <button class="btn" onclick="selectIMChannel('lark')" data-i18n="configureIM">配置接入</button>
+      </article>
+      <article class="im-platform-card" data-platform-card="weixin">
+        <div class="im-platform-top"><span class="im-platform-mark">微</span><span class="im-platform-name">微信</span><span class="im-platform-state" id="imPaneStateWeixin">—</span></div>
+        <div class="im-platform-copy" data-i18n="imWeixinDesc">微信 iLink Bot：扫码确认机器人登录，二维码过期会自动刷新。</div>
+        <div class="im-platform-meta">iLink Bot · QR refresh</div>
+        <button class="btn" onclick="selectIMChannel('weixin')" data-i18n="configureIM">配置接入</button>
+      </article>
+    </div>
+    <section class="im-connect-card">
+      <div class="im-connect-head"><h3 data-i18n="imConnectTitle">接入平台</h3><span data-i18n="imConnectHint">扫码完成后会保存为一个 IM 实例</span></div>
+      <div class="im-connect-actions">
+        <select class="form-select" id="imPaneChannel" aria-label="IM 渠道"><option value="feishu">Feishu</option><option value="lark">Lark</option><option value="weixin">微信</option></select>
+        <input class="form-input" id="imPaneName" data-i18n-ph="imInstancePlaceholder" placeholder="实例名称（可选）">
+        <button class="btn btn-primary" id="btnImPaneScan" data-i18n="scanLogin">扫码登录</button>
+      </div>
+      <div class="im-pane-qr" id="imPaneQrBox"><img id="imPaneQrImage" alt="IM QR"><div class="im-pane-qr-copy"><strong id="imPaneQrTitle" data-i18n="imScanTitle">请使用对应 App 扫描二维码</strong><span id="imPaneQrHint" data-i18n="scanWaiting">等待扫码确认…</span><code id="imPaneQrCode"></code></div></div>
+    </section>
+    <section class="im-pane-instances">
+      <div class="im-pane-instances-head"><h3 data-i18n="imInstancesTitle">已接入实例</h3><span class="im-pane-bridge-state" id="imPaneBridgeState">—</span></div>
+      <div id="imPaneInstances"></div>
+    </section>
+  </div>
+
   <!-- Composer -->
   <div class="composer-wrap">
     <div class="composer-inner">
@@ -582,6 +671,7 @@ html[data-wallpaper="1"] .composer{background:color-mix(in srgb,var(--bg-input) 
           <button class="chip-btn workspace-chip" id="chipWorkspace" title="当前工作空间">⌂ 未选择工作空间</button>
           <button class="chip-btn" id="chipModel">—</button>
           <button class="chip-btn" id="chipReset" data-i18n="resetChip">↺ 重置</button>
+          <button class="chip-btn" id="btnUndo" data-i18n="undoLast" title="撤销最近一次 Agent 文件修改">↶ 撤销</button>
           <div class="grow"></div>
           <button class="stop-btn" id="btnStop" title="中断回复">■</button>
           <button class="send-btn" id="btnSend" title="Enter">↑</button>
@@ -689,6 +779,40 @@ html[data-wallpaper="1"] .composer{background:color-mix(in srgb,var(--bg-input) 
   </div>
 </div>
 
+<!-- ========== Capability Control Room ========== -->
+<div class="overlay" id="controlOverlay">
+  <div class="modal control-modal">
+    <div class="modal-head">
+      <h2 data-i18n="controlRoomTitle">MCP 控制室</h2>
+      <button class="icon-btn" onclick="closeControlRoom()" title="关闭">✕</button>
+    </div>
+    <div class="control-kicker" data-i18n="controlRoomKicker">连接、活动与变更</div>
+    <section class="control-section">
+      <div class="control-section-head"><h3 data-i18n="mcpSection">MCP 服务</h3><span class="grow"></span><button class="btn" id="btnMcpRefresh" data-i18n="refreshBtn">刷新</button></div>
+      <div id="mcpRows"></div>
+    </section>
+  </div>
+</div>
+
+<!-- ========== Activity Room ========== -->
+<div class="overlay" id="activityOverlay">
+  <div class="modal control-modal activity-modal">
+    <div class="modal-head">
+      <h2 data-i18n="activityRoomTitle">工作区活动</h2>
+      <button class="icon-btn" onclick="closeActivityRoom()" title="关闭">✕</button>
+    </div>
+    <div class="control-kicker" data-i18n="activityRoomKicker">Agent 运行与文件变更</div>
+    <section class="control-section">
+      <div class="control-section-head"><h3 data-i18n="agentActivitySection">Agent 活动</h3><span class="grow"></span><small data-i18n="agentActivityHint">实时子 Agent 任务</small></div>
+      <div id="agentActivityRows"></div>
+    </section>
+    <section class="control-section">
+      <div class="control-section-head"><h3 data-i18n="changesSection">工作区变更</h3><span class="grow"></span><button class="btn" id="btnActivityUndo" data-i18n="undoLast">↶ 撤销</button></div>
+      <div id="changeRows"></div><pre class="control-diff" id="activityDiff"></pre>
+    </section>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -710,6 +834,8 @@ const I18N={
   fileTooLarge:'文件过大（单个不超过 15 MB）',attachmentsTooMany:'最多上传 10 个文件',
   attachmentsTotalTooLarge:'附件总大小不能超过 48 MB',
   resetChip:'↺ 重置',
+  undoLast:'↶ 撤销',workspaceChanged:'工作区文件已变化：{path}',
+  mcpMenu:'MCP',activityMenu:'活动',imMenu:'IM 平台',imPaneKicker:'REMOTE CHANNELS / ONBOARDING',imPaneTitle:'IM 平台',imPaneIntro:'选择一个平台，使用二维码完成接入。凭据会保存在本机，Agent 可以通过桥接服务响应对应会话。',imFeishuDesc:'飞书个人 Agent：扫码授权并自动创建应用凭据。',imLarkDesc:'Lark Personal Agent：使用国际版账号体系扫码登录。',imWeixinDesc:'微信 iLink Bot：扫码确认机器人登录，二维码过期会自动刷新。',configureIM:'配置接入',imConnectTitle:'接入平台',imConnectHint:'扫码完成后会保存为一个 IM 实例',imInstancePlaceholder:'实例名称（可选）',imScanTitle:'请使用对应 App 扫描二维码',imInstancesTitle:'已接入实例',imNotConnected:'未接入',imConfigured:'已配置',imActive:'运行中',controlRoomTitle:'MCP 控制室',controlRoomKicker:'服务状态与工具',activityRoomTitle:'工作区活动',activityRoomKicker:'Agent 运行与文件变更',mcpSection:'MCP 服务',imSection:'IM Bridge',agentActivitySection:'Agent 活动',agentActivityHint:'实时子 Agent 任务',changesSection:'工作区变更',refreshBtn:'刷新',scanLogin:'扫码登录',emptyMcp:'尚未配置 MCP 服务',emptyIm:'尚未配置 IM 实例',emptyActivity:'当前没有运行中的子 Agent',emptyChanges:'暂无 Agent 文件变更',imStopped:'已停止',imRunning:'运行中',imDegraded:'需要处理',scanWaiting:'等待扫码确认…',scanDone:'登录完成，凭据已保存',scanError:'扫码失败：{error}',diffBtn:'查看 Diff',openBtn:'打开',
 toggleTheme:'切换主题',preview:'预览',settings:'设置',
    previewTitle:'实时预览',
   providerModalTitle:'LLM 供应商管理',
@@ -740,6 +866,8 @@ toggleTheme:'切换主题',preview:'预览',settings:'设置',
   fileTooLarge:'File is too large (15 MB max)',attachmentsTooMany:'Up to 10 files',
   attachmentsTotalTooLarge:'Attachments must be 48 MB or less in total',
   resetChip:'↺ Reset',
+  undoLast:'↶ Undo',workspaceChanged:'Workspace file changed: {path}',
+  mcpMenu:'MCP',activityMenu:'Activity',imMenu:'IM platforms',imPaneKicker:'REMOTE CHANNELS / ONBOARDING',imPaneTitle:'IM platforms',imPaneIntro:'Choose a platform and complete onboarding with a QR code. Credentials stay on this device so the Agent can respond through the bridge.',imFeishuDesc:'Feishu Personal Agent: authorize by QR and create app credentials automatically.',imLarkDesc:'Lark Personal Agent: sign in with the international account flow.',imWeixinDesc:'Weixin iLink Bot: confirm the bot login by QR; expired codes refresh automatically.',configureIM:'Configure',imConnectTitle:'Connect a platform',imConnectHint:'A new IM instance is saved after QR confirmation',imInstancePlaceholder:'Instance name (optional)',imScanTitle:'Scan with the matching app',imInstancesTitle:'Connected instances',imNotConnected:'Not connected',imConfigured:'Configured',imActive:'Running',controlRoomTitle:'MCP control room',controlRoomKicker:'Service status and tools',activityRoomTitle:'Workspace activity',activityRoomKicker:'Agent runs and file changes',mcpSection:'MCP servers',imSection:'IM Bridge',agentActivitySection:'Agent activity',agentActivityHint:'Live sub-agent tasks',changesSection:'Workspace changes',refreshBtn:'Refresh',scanLogin:'Scan to sign in',emptyMcp:'No MCP servers configured',emptyIm:'No IM instances configured',emptyActivity:'No sub-agents are running',emptyChanges:'No Agent file changes yet',imStopped:'Stopped',imRunning:'Running',imDegraded:'Needs attention',scanWaiting:'Waiting for scan confirmation…',scanDone:'Signed in; credentials saved',scanError:'Scan failed: {error}',diffBtn:'View Diff',openBtn:'Open',
 toggleTheme:'Toggle theme',preview:'Preview',settings:'Settings',
    previewTitle:'Live Preview',
   providerModalTitle:'LLM Provider Management',
@@ -757,7 +885,8 @@ toggleTheme:'Toggle theme',preview:'Preview',settings:'Settings',
   errorPrefix:'✖ ',
  }
 };
-let curLang=(localStorage.getItem('lang'))||((navigator.language||'zh-CN').startsWith('zh')?'zh-CN':'en-US');
+I18N['zh-TW']={...I18N['zh-CN'],appTitle:'LongCat — 智慧通用 AI 助手',welcomeTitle:'今天想做什麼？',inputPlaceholder:'描述你的問題、需求或想法…',inputHint:'Enter 傳送 · Shift+Enter 換行',previewTitle:'即時預覽',settings:'設定',navChat:'對話',navSkills:'技能',navProviders:'供應商',imMenu:'IM 平台',imPaneTitle:'IM 平台',imPaneIntro:'選擇一個平台，使用 QR Code 完成接入。憑據會保存在本機，Agent 可以透過橋接服務回應對應會話。',configureIM:'設定接入',imConnectTitle:'接入平台',imInstancesTitle:'已接入實例',connected:'已連線',disconnected:'未連線',undoLast:'↶ 復原'};
+let curLang=(localStorage.getItem('lang'))||((navigator.language||'zh-CN').startsWith('zh')?(navigator.language||'').toLowerCase().includes('hant')?'zh-TW':'zh-CN':'en-US');
 function t(k){return (I18N[curLang]||{})[k]??k;}
 function tf(k,vars){let s=t(k);for(const[a,b]of Object.entries(vars||{}))s=s.replace('{'+a+'}',b);return s;}
 function applyI18n(){
@@ -765,11 +894,11 @@ function applyI18n(){
   document.querySelectorAll('[data-i18n]').forEach(el=>{const k=el.dataset.i18n;if(t(k)!==k)el.textContent=t(k);});
   document.querySelectorAll('[data-i18n-ph]').forEach(el=>{const k=el.dataset.i18nPh;if(t(k)!==k)el.placeholder=t(k);});
   document.querySelectorAll('[data-i18n-title]').forEach(el=>{const k=el.dataset.i18nTitle;if(t(k)!==k)el.title=t(k);});
-  $('btnLang').textContent=curLang==='zh-CN'?'EN':'中';
+  $('btnLang').textContent=curLang==='en-US'?'中':'EN';
   document.title=t('appTitle');
   renderNav();
 }
-function toggleLang(){curLang=curLang==='zh-CN'?'en-US':'zh-CN';localStorage.setItem('lang',curLang);applyI18n();refresh();}
+function toggleLang(){curLang=curLang==='en-US'?'zh-CN':'en-US';localStorage.setItem('lang',curLang);fetch('/api/settings/locale',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({locale:curLang==='en-US'?'en':'zh'})}).catch(()=>{});applyI18n();refresh();}
 
 // ============================================================
 // State & utils
@@ -781,6 +910,7 @@ let sidebarCollapsed=false,previewCollapsed=false;
 let isFullscreen=false;
 let workspaceExpanded=false;
 let pendingAttachments=[];
+let workspaceEvents=null;
 const MAX_ATTACHMENT_BYTES=15*1024*1024;
 const MAX_ATTACHMENT_COUNT=10;
 const MAX_ATTACHMENT_TOTAL=48*1024*1024;
@@ -788,6 +918,43 @@ function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').repl
 function toast(m){const el=$('toast');el.textContent=m;el.classList.add('show');
   setTimeout(()=>el.classList.remove('show'),2000);}
 const catAvatar='<svg><use href="#longcat"/></svg>';
+
+// ============================================================
+// Capability control room — shared desktop/browser surface
+// ============================================================
+let controlOpen=false,activityOpen=false,imScanTimer=null,imScanState=null;
+function openControlRoom(){if(activityOpen)closeActivityRoom();closeMainPanes();controlOpen=true;$('controlOverlay').classList.add('open');loadControlRoom();}
+function closeControlRoom(){controlOpen=false;$('controlOverlay').classList.remove('open');}
+function openActivityRoom(){if(controlOpen)closeControlRoom();closeMainPanes();activityOpen=true;$('activityOverlay').classList.add('open');renderNav();loadActivityRoom();}
+function closeActivityRoom(){activityOpen=false;$('activityOverlay').classList.remove('open');renderNav();}
+function controlTone(tone,healthy){if(tone==='auth_required'||tone==='auth_expired')return'auth';if(tone==='error'||healthy===false)return'fail';if(tone==='warn')return'warn';if(tone==='ok'||healthy===true)return'ok';return'';}
+function signalRow(title,meta,tone,action){return `<div class="signal-row"><span class="signal-rail ${tone||''}"></span><div class="signal-main"><span class="signal-title">${esc(title)}</span><span class="signal-meta">${esc(meta||'')}</span></div>${action||''}</div>`;}
+async function loadControlRoom(){
+  await refresh();
+  renderMcpRows(state.mcp||[]);
+}
+async function loadActivityRoom(){
+  await refresh();
+  let changes=[];
+  try{const r=await fetch('/api/workspace/undo');if(r.ok)changes=await r.json();}catch(e){}
+  renderAgentActivity(state.agent_activity||[]);renderChangeRows(changes);
+}
+function renderMcpRows(list){
+  const p=$('mcpRows');if(!list.length){p.innerHTML=`<div class="control-empty">${esc(t('emptyMcp'))}</div>`;return;}
+  p.innerHTML=list.map(s=>{const tone=controlTone(s.tone,s.healthy),meta=[s.protocol,s.tools?.length?`${s.tools.length} tools`: '0 tools',s.last_error||s.hint].filter(Boolean).join(' · ');return signalRow(s.name||s.id,meta,tone,'');}).join('');
+}
+function renderAgentActivity(rows){const p=$('agentActivityRows');if(!rows.length){p.innerHTML=`<div class="control-empty">${esc(t('emptyActivity'))}</div>`;return;}p.innerHTML=rows.map(a=>signalRow(a.agent||a.id,[a.status,a.current_tool||a.task].filter(Boolean).join(' · '),a.status==='error'?'fail':a.status==='running'?'ok':'')).join('');}
+function renderChangeRows(rows){const p=$('changeRows');if(!rows.length){p.innerHTML=`<div class="control-empty">${esc(t('emptyChanges'))}</div>`;return;}const list=[...rows].reverse().slice(0,8);p.innerHTML=list.map(e=>signalRow(e.file,e.action||e.timestamp,'warn',`<button class="btn signal-action" onclick="showDiff('${encodeURIComponent(e.file)}')">${esc(t('diffBtn'))}</button>`)).join('');}
+async function refreshMcp(){try{await fetch('/api/mcp/refresh',{method:'POST'});await loadControlRoom();}catch(e){toast(t('errorPrefix')+String(e));}}
+function imScanRefs(){return {name:'imPaneName',box:'imPaneQrBox',image:'imPaneQrImage',hint:'imPaneQrHint',code:'imPaneQrCode'};}
+async function beginImScan(channel,surface){
+  if(imScanTimer)clearTimeout(imScanTimer);
+  imScanState={channel,deviceCode:'',surface};const ui=imScanRefs();$(ui.box).classList.remove('open');
+  try{const r=await fetch('/api/im/scan/begin',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({channel,options:{}})}),d=await r.json();if(d.error){toast(d.error);return;}imScanState.deviceCode=d.device_code;$(ui.image).src=d.verification_uri;$(ui.code).textContent=d.device_code;$(ui.hint).textContent=t('scanWaiting');$(ui.box).classList.add('open');pollImScan(Math.max(1000,Number(d.interval_sec||3)*1000));}catch(e){toast(t('errorPrefix')+String(e));}
+}
+function startImPaneScan(){beginImScan($('imPaneChannel').value,'pane');}
+function pollImScan(delay){imScanTimer=setTimeout(async()=>{if(!imScanState)return;const ui=imScanRefs();try{const r=await fetch('/api/im/scan/poll',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({channel:imScanState.channel,device_code:imScanState.deviceCode})}),d=await r.json();if(d.error&&!d.status){toast(tf('scanError',{error:d.error}));return;}if(d.verification_uri){$(ui.image).src=d.verification_uri;}if(d.device_code){imScanState.deviceCode=d.device_code;$(ui.code).textContent=d.device_code;}if(d.status==='completed'){const channel=d.platform||imScanState.channel;const name=$(ui.name).value.trim()||channel;const secrets={app_id:d.app_id||'',app_secret:d.app_secret||''};const payload={instance:{id:'',channel,name,enabled:true,options:{},acl:{},project_scope:'current',presenter:'off',status:'configured'},secrets,connect_after_save:true};const saved=await fetch('/api/im/instances',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});if(!saved.ok){const err=await saved.json();toast(err.error||'保存失败');return;}$(ui.hint).textContent=t('scanDone');imScanState=null;if(document.getElementById('imPane')?.classList.contains('open'))await loadIMPane();else await loadControlRoom();return;}if(d.status==='denied'||d.status==='expired'||d.status==='error'){toast(tf('scanError',{error:d.error||d.status}));return;}pollImScan(2000);}catch(e){toast(t('errorPrefix')+String(e));}},delay);}
+async function showDiff(encoded){const path=decodeURIComponent(encoded);try{const r=await fetch('/api/workspace/diff?path='+encodeURIComponent(path)),d=await r.json();if(d.error){toast(d.error);return;}$('activityDiff').textContent=d.unified||`${d.before||''}\n→\n${d.after||''}`;$('activityDiff').classList.add('open');}catch(e){toast(t('errorPrefix')+String(e));}}
 
 // ============================================================
 // Wallpaper — media in IndexedDB, small preferences in localStorage
@@ -836,12 +1003,16 @@ function closeWallpaper(){$('wallpaperOverlay').classList.remove('open');}
 // Render
 // ============================================================
 function renderNav(){
+  const imOpen=$('imPane')?.classList.contains('open'),skillsOpen=$('skillsPane')?.classList.contains('open'),activityIsOpen=$('activityOverlay')?.classList.contains('open');
   $('sbNav').innerHTML=[
-    {icon:'◈',key:'navChat',active:true},
-    {icon:'◆',key:'navSkills',onclick:'openSkillsPane()'},
+    {icon:'◈',key:'navChat',active:!imOpen&&!skillsOpen&&!activityIsOpen,onclick:'closeMainPanes()'},
+    {icon:'◆',key:'navSkills',active:skillsOpen,onclick:'openSkillsPane()'},
+    {icon:'◎',key:'imMenu',active:imOpen,onclick:'openIMPane()'},
+    {icon:'◌',key:'activityMenu',active:activityIsOpen,onclick:'openActivityRoom()'},
+    {icon:'⌁',key:'mcpMenu',active:false,onclick:'openControlRoom()'},
     {icon:'⚙',key:'navProviders',onclick:'openModal()'},
     {icon:'▧',key:'wallpaper',onclick:'openWallpaper()'}
-  ].map(n=>`<button class="nav-item${n.active?' active':''}" ${n.onclick?`onclick="${n.onclick}"`:''}>
+  ].map(n=>`<button class="nav-item${n.active?' active':''}" data-nav-key="${n.key}" ${n.onclick?`onclick="${n.onclick}"`:''}>
     <span class="ni">${n.icon}</span>${t(n.key)}</button>`).join('');
 }
 
@@ -849,6 +1020,7 @@ function renderNav(){
 async function refresh(){
   try{
     const r=await fetch('/api/state');state=await r.json();
+    if(!localStorage.getItem('lang')&&state.locale){curLang=state.locale==='en'?'en-US':state.locale==='zh-TW'?'zh-TW':'zh-CN';applyI18n();}
     $('connDot').style.background='var(--success)';$('connText').textContent=t('connected');
   }catch(e){
     $('connDot').style.background='var(--danger)';$('connText').textContent=t('disconnected');return;
@@ -1195,6 +1367,7 @@ function navigatePreview(raw){
   // over src in browsers. Remove it completely before loading a workspace URL.
   $('previewFrame').removeAttribute('srcdoc');
   $('previewFrame').src=previewUrl;
+  if(!input.startsWith('generated://'))fetch('/api/preview/navigate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:input})}).catch(()=>{});
 }
 function loadWorkspacePreview(){
   if(!previewOn || !previewUrl)return;
@@ -1213,8 +1386,12 @@ function updatePreview(text){
     loadWorkspacePreview();
   }
 }
-function previewHistory(method){
-  try{ $('previewFrame').contentWindow.history[method](); }catch(e){ }
+async function previewHistory(method){
+  const endpoint=method==='back'?'/api/preview/back':'/api/preview/forward';
+  try{const r=await fetch(endpoint,{method:'POST'}),d=await r.json();if(d.current_url)navigatePreviewWithoutHistory(d.current_url);}catch(e){try{$('previewFrame').contentWindow.history[method]();}catch(_){}}
+}
+function navigatePreviewWithoutHistory(raw){
+  const input=String(raw||'').trim();if(!input)return;previewUrl=normalizePreviewUrl(input);$('previewAddress').value=input;$('previewFrame').removeAttribute('srcdoc');$('previewFrame').src=previewUrl;
 }
 
 // ============================================================
@@ -1228,6 +1405,8 @@ $('btnChooseWallpaper').onclick=()=>$('wallpaperInput').click();
 $('wallpaperInput').onchange=e=>{const file=e.target.files?.[0];chooseWallpaper(file);e.target.value='';};
 $('btnClearWallpaper').onclick=clearWallpaper;
 $('wallpaperOverlay').onclick=e=>{if(e.target===$('wallpaperOverlay'))closeWallpaper();};
+$('controlOverlay').onclick=e=>{if(e.target===$('controlOverlay'))closeControlRoom();};
+$('activityOverlay').onclick=e=>{if(e.target===$('activityOverlay'))closeActivityRoom();};
 [['wallpaperScrim','scrim'],['wallpaperPane','pane'],['wallpaperBlur','blur']].forEach(([id,key])=>$(id).addEventListener('input',e=>{wallpaperState.prefs[key]=Number(e.target.value);saveWallpaperPrefs();}));
 $('btnTheme').onclick=()=>{
   const d=document.documentElement;
@@ -1237,6 +1416,9 @@ $('btnTheme').onclick=()=>{
 };
 $('btnLang').onclick=toggleLang;
 $('btnSkillsView').onclick=openSkillsPane;
+$('btnMcpRefresh').onclick=refreshMcp;
+$('btnImPaneScan').onclick=startImPaneScan;
+$('btnActivityUndo').onclick=undoLastChange;
 $('btnAddRepo').onclick=async()=>{
   const inp=$('skillRepoInput');const url=inp.value.trim();
   if(!url)return;
@@ -1292,16 +1474,59 @@ document.addEventListener('keydown',e=>{
 // Skills 市场
 // ============================================================
 let skillsViewRepo=null;
+function closeMainPanes(){
+  $('skillsPane').classList.remove('open');
+  $('imPane').classList.remove('open');
+  $('chatArea').style.display='';
+  document.querySelector('.composer-wrap').style.display='';
+  renderNav();
+}
 function openSkillsPane(){
+  $('imPane').classList.remove('open');
   $('skillsPane').classList.add('open');
   $('chatArea').style.display='none';
   document.querySelector('.composer-wrap').style.display='none';
-  skillsViewRepo=null;loadSkillsView();
+  skillsViewRepo=null;renderNav();loadSkillsView();
 }
 function closeSkillsPane(){
+  closeMainPanes();
+}
+function openIMPane(){
   $('skillsPane').classList.remove('open');
-  $('chatArea').style.display='';
-  document.querySelector('.composer-wrap').style.display='';
+  $('imPane').classList.add('open');
+  $('chatArea').style.display='none';
+  document.querySelector('.composer-wrap').style.display='none';
+  renderNav();loadIMPane();
+}
+function closeIMPane(){
+  closeMainPanes();
+}
+function selectIMChannel(channel){
+  $('imPaneChannel').value=channel;
+  document.querySelectorAll('.im-platform-card').forEach(card=>card.classList.toggle('selected',card.dataset.platformCard===channel));
+  $('imPaneName').focus();
+  document.querySelector('.im-connect-card')?.scrollIntoView({behavior:'smooth',block:'center'});
+}
+async function loadIMPane(){
+  await refresh();
+  try{
+    const r=await fetch('/api/im/state');const data=await r.json();
+    const instances=data.instances||[],bridge=data.bridge||{};
+    const byChannel={};instances.forEach(item=>{byChannel[item.channel]=item;});
+    ['feishu','lark','weixin'].forEach(channel=>{
+      const item=byChannel[channel],el=$('imPaneState'+channel[0].toUpperCase()+channel.slice(1));
+      if(!el)return;
+      el.className='im-platform-state '+(item?.has_credentials?'ok':'');
+      el.textContent=item?.status==='connected'?t('imActive'):item?.has_credentials?t('imConfigured'):t('imNotConnected');
+    });
+    const bridgeState=$('imPaneBridgeState');bridgeState.className='im-pane-bridge-state '+(bridge.state==='running'?'ok':'');bridgeState.textContent=bridge.state==='running'?t('imRunning'):t('imStopped');
+    $('imPaneInstances').innerHTML=instances.length?instances.map(item=>signalRow(item.name||item.channel,[item.channel,item.has_credentials?t('imConfigured'):t('imNotConnected'),item.enabled?t('imActive'):t('imStopped')].join(' · '),controlTone(item.status,item.has_credentials),`<button class="btn signal-action" onclick="deleteIMPaneInstance('${esc(item.id)}')">×</button>`)).join(''):`<div class="control-empty">${esc(t('emptyIm'))}</div>`;
+    selectIMChannel($('imPaneChannel').value||'feishu');
+  }catch(e){$('imPaneInstances').innerHTML=`<div class="control-empty">${esc(t('errorPrefix')+String(e))}</div>`;}
+}
+async function deleteIMPaneInstance(id){
+  if(!confirm('删除该 IM 实例？'))return;
+  try{const r=await fetch('/api/im/instances/'+encodeURIComponent(id),{method:'DELETE'});const d=await r.json();if(d.error){toast(t('errorPrefix')+d.error);return;}await loadIMPane();}catch(e){toast(t('errorPrefix')+String(e));}
 }
 async function loadSkillsView(){
   const body=$('skillsBody');
@@ -1453,6 +1678,7 @@ async function loadWorkspace(restore=true){
     const r=await fetch('/api/workspace'); const data=await r.json();
     renderWorkspaces(data.workspaces||[], data.workspace_info?.id);
     if(data.workspace){
+      connectWorkspaceEvents();
       const name=data.workspace_info?.name||data.workspace.split(/[\\/]/).pop()||data.workspace;
       $('currentWorkspaceName').textContent=name;
       $('currentWorkspace').textContent=data.workspace;
@@ -1463,7 +1689,8 @@ async function loadWorkspace(restore=true){
       $('workspaceOpenPanel').classList.toggle('is-collapsed',!workspaceExpanded);
       renderSessions(data.sessions||[],data.active_session_id);
       if(restore)restoreMessages(data.messages||[]);
-      if(previewOn && previewUrl!=='generated://response')loadWorkspacePreview();
+      if(data.preview?.current_url && previewUrl!=='generated://response' && !previewUrl){navigatePreviewWithoutHistory(data.preview.current_url);}
+      else if(previewOn && previewUrl!=='generated://response')loadWorkspacePreview();
     }else{
       $('currentWorkspaceName').textContent='尚未打开';
       $('currentWorkspace').textContent='打开一个项目文件夹';
@@ -1478,6 +1705,15 @@ async function loadWorkspace(restore=true){
     $('currentWorkspaceName').textContent='加载失败';
     $('currentWorkspace').textContent='无法连接工作空间服务';
   }
+}
+function connectWorkspaceEvents(){
+  if(workspaceEvents||!window.EventSource)return;
+  workspaceEvents=new EventSource('/api/workspace/events');
+  workspaceEvents.addEventListener('change',ev=>{try{const d=JSON.parse(ev.data);toast(tf('workspaceChanged',{path:d.path||''}));if(activityOpen)loadActivityRoom();}catch(e){}});
+  workspaceEvents.onerror=()=>{workspaceEvents?.close();workspaceEvents=null;setTimeout(()=>{if(state.workspace)connectWorkspaceEvents();},3000);};
+}
+async function undoLastChange(){
+  try{const r=await fetch('/api/workspace/undo',{method:'POST'}),d=await r.json();if(d.error){toast(d.error);return;}toast(t('undoLast'));await loadWorkspace(false);if(activityOpen)await loadActivityRoom();}catch(e){toast(t('errorPrefix')+String(e));}
 }
 
 async function setWorkspace(path){
@@ -1692,12 +1928,14 @@ $('btnSidebarToggle').onclick=toggleSidebar;
 $('btnSidebarToggleMain').onclick=toggleSidebar;
 $('btnPreviewToggle').onclick=togglePreview;
 $('btnPreviewFullscreen').onclick=togglePreviewFullscreen;
+$('btnUndo').onclick=undoLastChange;
 $('previewBack').onclick=()=>previewHistory('back');
 $('previewForward').onclick=()=>previewHistory('forward');
 $('previewReload').onclick=()=>{try{$('previewFrame').contentWindow.location.reload();}catch(e){$('previewFrame').src=previewUrl;}};
 $('previewHome').onclick=()=>navigatePreview('/api/preview/index.html');
 $('previewGo').onclick=()=>navigatePreview($('previewAddress').value);
 $('previewAddress').addEventListener('keydown',e=>{if(e.key==='Enter')navigatePreview(e.target.value);});
+document.addEventListener('keydown',e=>{if(!previewOn||!e.altKey)return;if(e.key==='ArrowLeft'){e.preventDefault();previewHistory('back');}else if(e.key==='ArrowRight'){e.preventDefault();previewHistory('forward');}else if(e.key.toLowerCase()==='r'){e.preventDefault();$('previewReload').click();}});
 if($('btnPickWorkspace')) $('btnPickWorkspace').onclick=pickWorkspace;
 if($('btnRevealWorkspace')) $('btnRevealWorkspace').onclick=revealWorkspace;
 if($('btnNewSession')) $('btnNewSession').onclick=newSession;

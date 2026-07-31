@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,13 +12,21 @@ import (
 
 	"LongCat-frontend/internal/frontend"
 	"LongCat-frontend/internal/llm"
+	"LongCat-frontend/internal/mcp"
+	"LongCat-frontend/internal/workspace"
 )
 
 // ToolExecutor exposes the tools available to one agent session.
 // All filesystem operations are confined to Workspace.
 type ToolExecutor struct {
-	Workspace string
-	Skills    []frontend.Skill
+	Workspace          string
+	Skills             []frontend.Skill
+	MCP                *mcp.Manager
+	Undo               *workspace.UndoStore
+	Agents             []AgentDefinition
+	Manager            *llm.Manager
+	Activity           *ActivityTracker
+	OrchestrationDepth int
 }
 
 // ValidateWorkspace checks that path is an existing directory and returns its absolute form.
@@ -40,7 +49,7 @@ func ValidateWorkspace(path string) (string, error) {
 }
 
 func (e *ToolExecutor) Definitions() []llm.Tool {
-	return []llm.Tool{
+	tools := []llm.Tool{
 		{Type: "function", Function: llm.FunctionDefinition{Name: "list_directory", Description: "列出工作空间目录内容。path 为空表示工作空间根目录。", Parameters: objectSchema(map[string]any{
 			"path": map[string]any{"type": "string", "description": "相对工作空间路径"},
 		})}},
@@ -58,6 +67,16 @@ func (e *ToolExecutor) Definitions() []llm.Tool {
 			"name": map[string]any{"type": "string", "description": "技能名称"},
 		})}},
 	}
+	if e.MCP != nil {
+		tools = append(tools, e.MCP.Definitions()...)
+	}
+	if len(e.Agents) > 0 && e.Manager != nil {
+		tools = append(tools, llm.Tool{Type: "function", Function: llm.FunctionDefinition{Name: "spawn_subagent", Description: "委派一个专门的子 Agent 完成独立任务并返回结果。", Parameters: objectSchema(map[string]any{
+			"agent": map[string]any{"type": "string", "description": "Agent 名称"},
+			"task":  map[string]any{"type": "string", "description": "交给子 Agent 的清晰任务"},
+		})}})
+	}
+	return tools
 }
 
 func objectSchema(properties map[string]any) map[string]any {
@@ -74,6 +93,10 @@ func requiredKeys(m map[string]any) []string {
 }
 
 func (e *ToolExecutor) Execute(name, raw string) (string, error) {
+	return e.ExecuteContext(context.Background(), name, raw)
+}
+
+func (e *ToolExecutor) ExecuteContext(ctx context.Context, name, raw string) (string, error) {
 	var args map[string]any
 	if raw == "" {
 		raw = "{}"
@@ -82,6 +105,15 @@ func (e *ToolExecutor) Execute(name, raw string) (string, error) {
 		return "", fmt.Errorf("工具参数无效: %w", err)
 	}
 	switch name {
+	case "spawn_subagent":
+		var input struct {
+			Agent string `json:"agent"`
+			Task  string `json:"task"`
+		}
+		if err := json.Unmarshal([]byte(raw), &input); err != nil {
+			return "", err
+		}
+		return SpawnSubagent(ctx, e.Manager, e.Workspace, e.Skills, e.Agents, input.Agent, input.Task, e.OrchestrationDepth, e.Activity, e.MCP, e.Undo)
 	case "list_directory":
 		path, _ := args["path"].(string)
 		return e.list(path)
@@ -104,6 +136,9 @@ func (e *ToolExecutor) Execute(name, raw string) (string, error) {
 		}
 		return "", fmt.Errorf("技能 %q 不存在", name)
 	default:
+		if e.MCP != nil && strings.HasPrefix(name, "mcp_") {
+			return e.MCP.Execute(ctx, name, raw)
+		}
 		return "", fmt.Errorf("未知工具 %q", name)
 	}
 }
@@ -184,11 +219,21 @@ func (e *ToolExecutor) write(path, content string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	previous, readErr := os.ReadFile(file)
+	existed := readErr == nil
+	if readErr != nil && !os.IsNotExist(readErr) {
+		return "", readErr
+	}
 	if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
 		return "", err
 	}
 	if err := os.WriteFile(file, []byte(content), 0o644); err != nil {
 		return "", err
+	}
+	if e.Undo != nil {
+		if err := e.Undo.Record(e.Workspace, path, previous, existed, "agent write_file"); err != nil {
+			return "", err
+		}
 	}
 	return fmt.Sprintf("已写入 %d 字节到 %s", len(content), filepath.ToSlash(path)), nil
 }
