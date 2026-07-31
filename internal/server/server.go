@@ -84,6 +84,8 @@ func Run(addr string, m *llm.Manager, s *agent.Session) error {
 	mux.HandleFunc("POST /api/workspaces/open", a.openWorkspace)
 	mux.HandleFunc("GET /api/sessions", a.listSessions)
 	mux.HandleFunc("POST /api/sessions", a.createSession)
+	mux.HandleFunc("GET /api/sessions/{id}", a.getSession)
+	mux.HandleFunc("PUT /api/sessions/{id}", a.updateSession)
 	mux.HandleFunc("POST /api/sessions/{id}/use", a.useSession)
 	mux.HandleFunc("DELETE /api/sessions/{id}", a.deleteSession)
 
@@ -320,11 +322,21 @@ func (a *api) useProvider(w http.ResponseWriter, r *http.Request) {
 // chat SSE 流式对话。
 func (a *api) chat(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		Message string `json:"message"`
-		Mode    string `json:"mode,omitempty"` // 可选：前端模式 react|nextjs|vue|tailwind|svelte
+		Message     string           `json:"message"`
+		Mode        string           `json:"mode,omitempty"` // 可选：前端模式 react|nextjs|vue|tailwind|svelte
+		Attachments []llm.Attachment `json:"attachments,omitempty"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&in); err != nil || strings.TrimSpace(in.Message) == "" {
-		writeErr(w, 400, fmt.Errorf("message 不能为空"))
+	r.Body = http.MaxBytesReader(w, r.Body, 64<<20)
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		writeErr(w, 400, fmt.Errorf("无效的聊天请求: %w", err))
+		return
+	}
+	if err := validateAttachments(in.Attachments); err != nil {
+		writeErr(w, 400, err)
+		return
+	}
+	if strings.TrimSpace(in.Message) == "" && len(in.Attachments) == 0 {
+		writeErr(w, 400, fmt.Errorf("message 或附件不能为空"))
 		return
 	}
 	// 设置模式（空则保持当前模式；非法模式忽略）
@@ -384,7 +396,7 @@ func (a *api) chat(w http.ResponseWriter, r *http.Request) {
 		a.cancel = nil
 		a.cancelMu.Unlock()
 	}()
-	_, err := a.session.AskWithEvents(ctx, in.Message, func(delta string) {
+	_, err := a.session.AskWithAttachments(ctx, in.Message, in.Attachments, func(delta string) {
 		send("delta", delta)
 	}, func(event agent.ToolEvent) {
 		send("tool", event)
@@ -404,6 +416,30 @@ func (a *api) chat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	send("done", true)
+}
+
+func validateAttachments(attachments []llm.Attachment) error {
+	if len(attachments) > 10 {
+		return fmt.Errorf("一次最多上传 10 个文件")
+	}
+	var total int64
+	for _, a := range attachments {
+		if strings.TrimSpace(a.Name) == "" {
+			return fmt.Errorf("附件缺少文件名")
+		}
+		if strings.TrimSpace(a.MIMEType) == "" {
+			return fmt.Errorf("附件 %q 缺少 MIME 类型", a.Name)
+		}
+		bytes := int64(len(a.Data) + len(a.Text))
+		if a.Size > 15<<20 || bytes > 22<<20 {
+			return fmt.Errorf("附件 %q 超过 15 MB 限制", a.Name)
+		}
+		total += bytes
+	}
+	if total > 48<<20 {
+		return fmt.Errorf("附件总大小不能超过 48 MB")
+	}
+	return nil
 }
 
 func (a *api) stopChat(w http.ResponseWriter, _ *http.Request) {
@@ -524,10 +560,23 @@ func (a *api) getWorkspace(w http.ResponseWriter, _ *http.Request) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.activeWorkspace.ID == "" {
-		writeJSON(w, 200, map[string]any{"workspace": "", "workspaces": a.workspaces.ListWorkspaces(), "sessions": []any{}})
+		writeJSON(w, 200, map[string]any{
+			"workspace":         "",
+			"workspaces":        a.workspaces.ListWorkspaces(),
+			"sessions":          []any{},
+			"active_session_id": "",
+			"messages":          []llm.Message{},
+		})
 		return
 	}
-	writeJSON(w, 200, map[string]any{"workspace": a.activeWorkspace.Path, "workspace_info": a.activeWorkspace, "workspaces": a.workspaces.ListWorkspaces(), "sessions": a.workspaces.ListSessions(a.activeWorkspace.ID), "active_session_id": a.activeSessionID})
+	writeJSON(w, 200, map[string]any{
+		"workspace":         a.activeWorkspace.Path,
+		"workspace_info":    a.activeWorkspace,
+		"workspaces":        a.workspaces.ListWorkspaces(),
+		"sessions":          a.workspaces.ListSessions(a.activeWorkspace.ID),
+		"active_session_id": a.activeSessionID,
+		"messages":          append([]llm.Message{}, a.session.Messages...),
+	})
 }
 
 func (a *api) setWorkspace(w http.ResponseWriter, r *http.Request) {
@@ -628,6 +677,40 @@ func (a *api) createSession(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"session": rc, "active_session_id": a.activeSessionID})
 }
 
+func (a *api) getSession(w http.ResponseWriter, r *http.Request) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	rc, ok := a.workspaces.GetSession(r.PathValue("id"))
+	if !ok {
+		writeErr(w, 404, fmt.Errorf("会话不存在"))
+		return
+	}
+	writeJSON(w, 200, map[string]any{"session": rc, "active": rc.ID == a.activeSessionID})
+}
+
+func (a *api) updateSession(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Title string `json:"title"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		writeErr(w, 400, fmt.Errorf("无效的请求"))
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	rc, ok := a.workspaces.GetSession(r.PathValue("id"))
+	if !ok {
+		writeErr(w, 404, fmt.Errorf("会话不存在"))
+		return
+	}
+	updated, err := a.workspaces.UpdateSessionTitle(rc.ID, in.Title)
+	if err != nil {
+		writeErr(w, 400, err)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"session": updated, "active_session_id": a.activeSessionID})
+}
+
 func (a *api) useSession(w http.ResponseWriter, r *http.Request) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -643,14 +726,30 @@ func (a *api) deleteSession(w http.ResponseWriter, r *http.Request) {
 	defer a.mu.Unlock()
 	id := r.PathValue("id")
 	if id == a.activeSessionID {
-		writeErr(w, 400, fmt.Errorf("不能删除当前会话，请先切换会话"))
-		return
+		sessions := a.workspaces.ListSessions(a.activeWorkspace.ID)
+		if len(sessions) <= 1 {
+			writeErr(w, 400, fmt.Errorf("工作空间至少需要保留一个会话"))
+			return
+		}
+		if err := a.saveActiveLocked(); err != nil {
+			writeErr(w, 500, err)
+			return
+		}
+		for _, candidate := range sessions {
+			if candidate.ID != id {
+				if err := a.activateSessionLocked(candidate.ID); err != nil {
+					writeErr(w, 500, err)
+					return
+				}
+				break
+			}
+		}
 	}
 	if err := a.workspaces.DeleteSession(id); err != nil {
 		writeErr(w, 404, err)
 		return
 	}
-	writeJSON(w, 200, map[string]bool{"ok": true})
+	writeJSON(w, 200, map[string]any{"ok": true, "active_session_id": a.activeSessionID})
 }
 
 func (a *api) saveActiveLocked() error {
@@ -664,7 +763,38 @@ func (a *api) saveActiveLocked() error {
 	r.Messages = append([]llm.Message(nil), a.session.Messages...)
 	r.Mode = a.session.Mode
 	r.ActiveSkill = a.session.ActiveSkill
+	r.Title = sessionTitle(r.Title, r.Messages)
 	return a.workspaces.SaveSession(r)
+}
+
+func sessionTitle(current string, messages []llm.Message) string {
+	if title := strings.TrimSpace(current); title != "" && title != "新会话" {
+		return title
+	}
+	for _, message := range messages {
+		if message.Role != "user" {
+			continue
+		}
+		title := strings.Join(strings.Fields(message.Content), " ")
+		if title == "" && len(message.Attachments) > 0 {
+			names := make([]string, 0, len(message.Attachments))
+			for _, attachment := range message.Attachments {
+				if strings.TrimSpace(attachment.Name) != "" {
+					names = append(names, attachment.Name)
+				}
+			}
+			title = "附件：" + strings.Join(names, "、")
+		}
+		if title == "" {
+			continue
+		}
+		runes := []rune(title)
+		if len(runes) > 36 {
+			return string(runes[:36]) + "…"
+		}
+		return title
+	}
+	return "新会话"
 }
 
 func (a *api) activateSessionLocked(id string) error {

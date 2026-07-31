@@ -191,6 +191,26 @@ func (s *Store) GetSession(id string) (SessionRecord, bool) {
 	r, ok := s.sessions[id]
 	return r, ok
 }
+
+func (s *Store) UpdateSessionTitle(id, title string) (SessionRecord, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	r, ok := s.sessions[id]
+	if !ok {
+		return SessionRecord{}, errors.New("会话不存在")
+	}
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return SessionRecord{}, errors.New("会话名称不能为空")
+	}
+	r.Title = title
+	r.UpdatedAt = time.Now()
+	s.sessions[id] = r
+	if err := s.saveLocked(); err != nil {
+		return SessionRecord{}, err
+	}
+	return r, nil
+}
 func (s *Store) SaveSession(r SessionRecord) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

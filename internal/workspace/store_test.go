@@ -34,6 +34,10 @@ func TestOpenFolderAndSessions(t *testing.T) {
 	if got := store.ListSessions(w.ID); len(got) != 1 || got[0].ID != r.ID {
 		t.Fatalf("unexpected sessions: %#v", got)
 	}
+	renamed, err := store.UpdateSessionTitle(r.ID, "renamed")
+	if err != nil || renamed.Title != "renamed" {
+		t.Fatalf("unexpected renamed session: %#v, err=%v", renamed, err)
+	}
 	if _, err := NewStoreAt(filepath.Join(root, "state.json")); err != nil {
 		t.Fatal(err)
 	}

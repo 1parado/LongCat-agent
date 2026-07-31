@@ -182,25 +182,32 @@ func (s *Session) Ask(ctx context.Context, input string, onDelta llm.StreamFunc)
 
 // AskWithEvents is Ask with optional tool lifecycle notifications.
 func (s *Session) AskWithEvents(ctx context.Context, input string, onDelta llm.StreamFunc, onTool ToolEventFunc) (string, error) {
+	return s.AskWithAttachments(ctx, input, nil, onDelta, onTool)
+}
+
+// AskWithAttachments sends a user turn with optional multimodal attachments.
+// The attachment metadata is persisted with the user message so restored
+// sessions can render the same message cards.
+func (s *Session) AskWithAttachments(ctx context.Context, input string, attachments []llm.Attachment, onDelta llm.StreamFunc, onTool ToolEventFunc) (string, error) {
 	provider, err := s.Manager.Active()
 	if err != nil {
 		return "", err
 	}
 	msgs := []llm.Message{{Role: "system", Content: s.buildSystem(input)}}
 	msgs = append(msgs, s.Messages...)
-	msgs = append(msgs, llm.Message{Role: "user", Content: input})
+	msgs = append(msgs, llm.Message{Role: "user", Content: input, Attachments: attachments})
 
 	exec := &ToolExecutor{Workspace: s.Workspace, Skills: s.Skills}
 	var reply string
 	for round := 0; round < 8; round++ {
 		if err := ctx.Err(); err != nil {
-			s.commitInterrupted(input, reply)
+			s.commitInterrupted(input, attachments, reply)
 			return reply, err
 		}
 		result, err := llm.ChatWithTools(ctx, provider, llm.ChatOptions{Messages: msgs, Tools: exec.Definitions(), OnDelta: onDelta})
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
-				s.commitInterrupted(input, reply)
+				s.commitInterrupted(input, attachments, reply)
 			}
 			return reply, err
 		}
@@ -213,7 +220,7 @@ func (s *Session) AskWithEvents(ctx context.Context, input string, onDelta llm.S
 		msgs = append(msgs, assistant)
 		for index, call := range result.ToolCalls {
 			if err := ctx.Err(); err != nil {
-				s.commitInterrupted(input, reply)
+				s.commitInterrupted(input, attachments, reply)
 				return reply, err
 			}
 			callID := call.ID
@@ -236,7 +243,7 @@ func (s *Session) AskWithEvents(ctx context.Context, input string, onDelta llm.S
 		}
 	}
 	s.Messages = append(s.Messages,
-		llm.Message{Role: "user", Content: input},
+		llm.Message{Role: "user", Content: input, Attachments: attachments},
 		llm.Message{Role: "assistant", Content: reply},
 	)
 	// 轻量会话：只保留最近 20 条，避免无限膨胀。
@@ -246,8 +253,8 @@ func (s *Session) AskWithEvents(ctx context.Context, input string, onDelta llm.S
 	return reply, nil
 }
 
-func (s *Session) commitInterrupted(input, reply string) {
-	s.Messages = append(s.Messages, llm.Message{Role: "user", Content: input})
+func (s *Session) commitInterrupted(input string, attachments []llm.Attachment, reply string) {
+	s.Messages = append(s.Messages, llm.Message{Role: "user", Content: input, Attachments: attachments})
 	if reply != "" {
 		s.Messages = append(s.Messages, llm.Message{Role: "assistant", Content: reply})
 	}

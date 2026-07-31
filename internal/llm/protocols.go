@@ -68,7 +68,7 @@ func ChatWithTools(ctx context.Context, p Provider, opts ChatOptions) (ChatResul
 }
 
 func ollamaChatWithTools(ctx context.Context, p Provider, opts ChatOptions) (ChatResult, error) {
-	body := map[string]any{"model": p.Model, "messages": opts.Messages, "tools": opts.Tools, "stream": opts.OnDelta != nil}
+	body := map[string]any{"model": p.Model, "messages": ollamaMessages(opts.Messages), "tools": opts.Tools, "stream": opts.OnDelta != nil}
 	resp, err := postJSON(ctx, endpoint(p.URL, "/api/chat"), nil, body)
 	if err != nil {
 		return ChatResult{}, err
@@ -136,6 +136,193 @@ func endpoint(base, path string) string {
 	return strings.TrimRight(base, "/") + path
 }
 
+func attachmentMIME(a Attachment) string {
+	if a.MIMEType != "" {
+		return a.MIMEType
+	}
+	return "application/octet-stream"
+}
+
+func attachmentDataURL(a Attachment) string {
+	if a.Data == "" {
+		return ""
+	}
+	if strings.HasPrefix(a.Data, "data:") {
+		return a.Data
+	}
+	return "data:" + attachmentMIME(a) + ";base64," + a.Data
+}
+
+func attachmentBase64(a Attachment) string {
+	data := attachmentDataURL(a)
+	if comma := strings.IndexByte(data, ','); comma >= 0 {
+		return data[comma+1:]
+	}
+	return data
+}
+
+func attachmentText(a Attachment) string {
+	if a.Text != "" {
+		return a.Text
+	}
+	return fmt.Sprintf("[附件: %s (%s)]", a.Name, attachmentMIME(a))
+}
+
+// openAIChatMessages maps our common message shape to Chat Completions. This
+// API supports image_url parts; text and unsupported file types remain
+// understandable through extracted text or a compact attachment marker.
+func openAIChatMessages(msgs []Message) []any {
+	out := make([]any, 0, len(msgs))
+	for _, m := range msgs {
+		if len(m.Attachments) == 0 {
+			out = append(out, m)
+			continue
+		}
+		parts := make([]any, 0, 1+len(m.Attachments))
+		if m.Content != "" {
+			parts = append(parts, map[string]any{"type": "text", "text": m.Content})
+		}
+		for _, a := range m.Attachments {
+			if strings.HasPrefix(strings.ToLower(attachmentMIME(a)), "image/") && attachmentDataURL(a) != "" {
+				parts = append(parts, map[string]any{
+					"type":      "image_url",
+					"image_url": map[string]any{"url": attachmentDataURL(a)},
+				})
+				continue
+			}
+			parts = append(parts, map[string]any{"type": "text", "text": attachmentText(a)})
+		}
+		msg := map[string]any{"role": m.Role, "content": parts}
+		if len(m.ToolCalls) > 0 {
+			msg["tool_calls"] = m.ToolCalls
+		}
+		if m.ToolCallID != "" {
+			msg["tool_call_id"] = m.ToolCallID
+		}
+		if m.Name != "" {
+			msg["name"] = m.Name
+		}
+		out = append(out, msg)
+	}
+	return out
+}
+
+func openAIResponsesContent(m Message) []any {
+	parts := make([]any, 0, 1+len(m.Attachments))
+	if m.Content != "" {
+		parts = append(parts, map[string]any{"type": "input_text", "text": m.Content})
+	}
+	for _, a := range m.Attachments {
+		mimeType := strings.ToLower(attachmentMIME(a))
+		if strings.HasPrefix(mimeType, "image/") && attachmentDataURL(a) != "" {
+			parts = append(parts, map[string]any{"type": "input_image", "image_url": attachmentDataURL(a)})
+		} else if attachmentDataURL(a) != "" {
+			parts = append(parts, map[string]any{
+				"type": "input_file", "filename": a.Name, "file_data": attachmentDataURL(a),
+			})
+		} else {
+			parts = append(parts, map[string]any{"type": "input_text", "text": attachmentText(a)})
+		}
+	}
+	return parts
+}
+
+func openAIResponsesInput(msgs []Message) []any {
+	input := make([]any, 0, len(msgs))
+	for _, m := range msgs {
+		if m.Role == "system" {
+			continue
+		}
+		if m.Role == "tool" {
+			input = append(input, map[string]any{"type": "function_call_output", "call_id": m.ToolCallID, "output": m.Content})
+			continue
+		}
+		if len(m.ToolCalls) > 0 {
+			for _, tc := range m.ToolCalls {
+				input = append(input, map[string]any{"type": "function_call", "call_id": tc.ID, "name": tc.Function.Name, "arguments": tc.Function.Arguments})
+			}
+			continue
+		}
+		input = append(input, map[string]any{"role": m.Role, "content": openAIResponsesContent(m)})
+	}
+	return input
+}
+
+func anthropicMessages(msgs []Message) []map[string]any {
+	conv := make([]map[string]any, 0, len(msgs))
+	for _, m := range msgs {
+		if m.Role == "system" {
+			continue
+		}
+		if m.Role == "tool" {
+			conv = append(conv, map[string]any{"role": "user", "content": []any{map[string]any{
+				"type": "tool_result", "tool_use_id": m.ToolCallID, "content": m.Content,
+			}}})
+			continue
+		}
+		if len(m.ToolCalls) > 0 {
+			blocks := make([]any, 0, len(m.ToolCalls))
+			for _, tc := range m.ToolCalls {
+				var input map[string]any
+				_ = json.Unmarshal([]byte(tc.Function.Arguments), &input)
+				blocks = append(blocks, map[string]any{"type": "tool_use", "id": tc.ID, "name": tc.Function.Name, "input": input})
+			}
+			conv = append(conv, map[string]any{"role": "assistant", "content": blocks})
+			continue
+		}
+		if len(m.Attachments) == 0 {
+			conv = append(conv, map[string]any{"role": m.Role, "content": m.Content})
+			continue
+		}
+		blocks := make([]any, 0, 1+len(m.Attachments))
+		if m.Content != "" {
+			blocks = append(blocks, map[string]any{"type": "text", "text": m.Content})
+		}
+		for _, a := range m.Attachments {
+			mimeType := strings.ToLower(attachmentMIME(a))
+			if strings.HasPrefix(mimeType, "image/") && attachmentBase64(a) != "" {
+				blocks = append(blocks, map[string]any{"type": "image", "source": map[string]any{
+					"type": "base64", "media_type": attachmentMIME(a), "data": attachmentBase64(a),
+				}})
+			} else if (mimeType == "application/pdf" || strings.HasPrefix(mimeType, "text/")) && attachmentBase64(a) != "" && a.Text == "" {
+				blocks = append(blocks, map[string]any{"type": "document", "source": map[string]any{
+					"type": "base64", "media_type": attachmentMIME(a), "data": attachmentBase64(a),
+				}})
+			} else {
+				blocks = append(blocks, map[string]any{"type": "text", "text": attachmentText(a)})
+			}
+		}
+		conv = append(conv, map[string]any{"role": m.Role, "content": blocks})
+	}
+	return conv
+}
+
+func ollamaMessages(msgs []Message) []map[string]any {
+	out := make([]map[string]any, 0, len(msgs))
+	for _, m := range msgs {
+		msg := map[string]any{"role": m.Role, "content": m.Content}
+		if len(m.ToolCalls) > 0 {
+			msg["tool_calls"] = m.ToolCalls
+		}
+		if m.ToolCallID != "" {
+			msg["tool_call_id"] = m.ToolCallID
+		}
+		var images []string
+		for _, a := range m.Attachments {
+			if strings.HasPrefix(strings.ToLower(attachmentMIME(a)), "image/") && attachmentBase64(a) != "" {
+				images = append(images, attachmentBase64(a))
+			} else {
+				msg["content"] = strings.TrimSpace(fmt.Sprintf("%v\n\n%s", msg["content"], attachmentText(a)))
+			}
+		}
+		if len(images) > 0 {
+			msg["images"] = images
+		}
+		out = append(out, msg)
+	}
+	return out
+}
+
 func postJSON(ctx context.Context, url string, headers map[string]string, body any) (*http.Response, error) {
 	data, err := json.Marshal(body)
 	if err != nil {
@@ -187,7 +374,7 @@ func scanSSE(body io.Reader, handle func(payload string) bool) error {
 func openAIChat(ctx context.Context, p Provider, msgs []Message, onDelta StreamFunc) (string, error) {
 	body := map[string]any{
 		"model":    p.Model,
-		"messages": msgs,
+		"messages": openAIChatMessages(msgs),
 		"stream":   onDelta != nil,
 	}
 	headers := map[string]string{"Authorization": "Bearer " + p.APIKey}
@@ -240,17 +427,14 @@ func openAIChat(ctx context.Context, p Provider, msgs []Message, onDelta StreamF
 func openAIResponses(ctx context.Context, p Provider, msgs []Message, onDelta StreamFunc) (string, error) {
 	// Responses API 使用 instructions + input 结构。
 	var sys string
-	input := make([]map[string]string, 0, len(msgs))
 	for _, m := range msgs {
 		if m.Role == "system" {
 			sys = m.Content
-			continue
 		}
-		input = append(input, map[string]string{"role": m.Role, "content": m.Content})
 	}
 	body := map[string]any{
 		"model":  p.Model,
-		"input":  input,
+		"input":  openAIResponsesInput(msgs),
 		"stream": onDelta != nil,
 	}
 	if sys != "" {
@@ -312,18 +496,15 @@ func openAIResponses(ctx context.Context, p Provider, msgs []Message, onDelta St
 
 func anthropicChat(ctx context.Context, p Provider, msgs []Message, onDelta StreamFunc) (string, error) {
 	var sys string
-	conv := make([]Message, 0, len(msgs))
 	for _, m := range msgs {
 		if m.Role == "system" {
 			sys = m.Content
-			continue
 		}
-		conv = append(conv, m)
 	}
 	body := map[string]any{
 		"model":      p.Model,
 		"max_tokens": 8192,
-		"messages":   conv,
+		"messages":   anthropicMessages(msgs),
 		"stream":     onDelta != nil,
 	}
 	if sys != "" {
@@ -384,7 +565,7 @@ func anthropicChat(ctx context.Context, p Provider, msgs []Message, onDelta Stre
 func ollamaChat(ctx context.Context, p Provider, msgs []Message, onDelta StreamFunc) (string, error) {
 	body := map[string]any{
 		"model":    p.Model,
-		"messages": msgs,
+		"messages": ollamaMessages(msgs),
 		"stream":   onDelta != nil,
 	}
 	resp, err := postJSON(ctx, endpoint(p.URL, "/api/chat"), nil, body)
@@ -430,7 +611,7 @@ func ollamaChat(ctx context.Context, p Provider, msgs []Message, onDelta StreamF
 }
 
 func openAIChatWithTools(ctx context.Context, p Provider, opts ChatOptions) (ChatResult, error) {
-	body := map[string]any{"model": p.Model, "messages": opts.Messages, "tools": opts.Tools, "stream": opts.OnDelta != nil}
+	body := map[string]any{"model": p.Model, "messages": openAIChatMessages(opts.Messages), "tools": opts.Tools, "stream": opts.OnDelta != nil}
 	resp, err := postJSON(ctx, endpoint(p.URL, "/chat/completions"), map[string]string{"Authorization": "Bearer " + p.APIKey}, body)
 	if err != nil {
 		return ChatResult{}, err
@@ -508,33 +689,16 @@ func openAIChatWithTools(ctx context.Context, p Provider, opts ChatOptions) (Cha
 
 func anthropicChatWithTools(ctx context.Context, p Provider, opts ChatOptions) (ChatResult, error) {
 	var system string
-	msgs := make([]map[string]any, 0, len(opts.Messages))
 	for _, m := range opts.Messages {
 		if m.Role == "system" {
 			system = m.Content
-			continue
 		}
-		if m.Role == "tool" {
-			msgs = append(msgs, map[string]any{"role": "user", "content": []map[string]any{{"type": "tool_result", "tool_use_id": m.ToolCallID, "content": m.Content}}})
-			continue
-		}
-		if len(m.ToolCalls) > 0 {
-			blocks := make([]map[string]any, 0, len(m.ToolCalls))
-			for _, tc := range m.ToolCalls {
-				var input map[string]any
-				_ = json.Unmarshal([]byte(tc.Function.Arguments), &input)
-				blocks = append(blocks, map[string]any{"type": "tool_use", "id": tc.ID, "name": tc.Function.Name, "input": input})
-			}
-			msgs = append(msgs, map[string]any{"role": "assistant", "content": blocks})
-			continue
-		}
-		msgs = append(msgs, map[string]any{"role": m.Role, "content": m.Content})
 	}
 	tools := make([]map[string]any, 0, len(opts.Tools))
 	for _, t := range opts.Tools {
 		tools = append(tools, map[string]any{"name": t.Function.Name, "description": t.Function.Description, "input_schema": t.Function.Parameters})
 	}
-	body := map[string]any{"model": p.Model, "max_tokens": 8192, "messages": msgs, "tools": tools, "stream": opts.OnDelta != nil}
+	body := map[string]any{"model": p.Model, "max_tokens": 8192, "messages": anthropicMessages(opts.Messages), "tools": tools, "stream": opts.OnDelta != nil}
 	if system != "" {
 		body["system"] = system
 	}
@@ -619,21 +783,12 @@ func anthropicChatWithTools(ctx context.Context, p Provider, opts ChatOptions) (
 func openAIResponsesWithTools(ctx context.Context, p Provider, opts ChatOptions) (ChatResult, error) {
 	// Responses has a different function-call envelope; map the common subset.
 	var sys string
-	input := make([]any, 0, len(opts.Messages))
 	for _, m := range opts.Messages {
 		if m.Role == "system" {
 			sys = m.Content
-		} else if m.Role == "tool" {
-			input = append(input, map[string]any{"type": "function_call_output", "call_id": m.ToolCallID, "output": m.Content})
-		} else if len(m.ToolCalls) > 0 {
-			for _, tc := range m.ToolCalls {
-				input = append(input, map[string]any{"type": "function_call", "call_id": tc.ID, "name": tc.Function.Name, "arguments": tc.Function.Arguments})
-			}
-		} else {
-			input = append(input, map[string]string{"role": m.Role, "content": m.Content})
 		}
 	}
-	body := map[string]any{"model": p.Model, "input": input, "tools": opts.Tools, "stream": opts.OnDelta != nil}
+	body := map[string]any{"model": p.Model, "input": openAIResponsesInput(opts.Messages), "tools": opts.Tools, "stream": opts.OnDelta != nil}
 	if sys != "" {
 		body["instructions"] = sys
 	}

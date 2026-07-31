@@ -65,10 +65,22 @@ func (p Provider) Redacted() string {
 	return p.APIKey[:4] + "..." + p.APIKey[len(p.APIKey)-4:]
 }
 
+// Attachment is a user-supplied file that can be carried through to a
+// multimodal provider. Data is normally a data URL; Text is used for text-like
+// files so providers that do not support arbitrary files can still read them.
+type Attachment struct {
+	Name     string `json:"name"`
+	MIMEType string `json:"mime_type"`
+	Data     string `json:"data,omitempty"`
+	Text     string `json:"text,omitempty"`
+	Size     int64  `json:"size,omitempty"`
+}
+
 // Message 单条对话消息。Role: system / user / assistant。
 type Message struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role        string       `json:"role"`
+	Content     string       `json:"content"`
+	Attachments []Attachment `json:"attachments,omitempty"`
 	// ToolCalls is populated on assistant messages that request tools.
 	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
 	ToolCallID string     `json:"tool_call_id,omitempty"`
