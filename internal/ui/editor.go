@@ -75,9 +75,9 @@ func (s *stdinReader) readByteTimeout(d time.Duration) (byte, bool) {
 type keyKind int
 
 const (
-	keyChar keyKind = iota
-	keyEnter      // 发送
-	keyNewline    // 换行
+	keyChar    keyKind = iota
+	keyEnter           // 发送
+	keyNewline         // 换行
 	keyBackspace
 	keyDelete
 	keyTab
@@ -87,10 +87,10 @@ const (
 	keyRight
 	keyHome
 	keyEnd
-	keyEsc    // 单独 ESC
-	keyCtrlC  // Ctrl+C
-	keyEOF    // Ctrl+D
-	keyCtrl   // Ctrl+letter，ch 存小写字母
+	keyEsc   // 单独 ESC
+	keyCtrlC // Ctrl+C
+	keyEOF   // Ctrl+D
+	keyCtrl  // Ctrl+letter，ch 存小写字母
 )
 
 type keyEvent struct {
@@ -249,9 +249,9 @@ type keyAction int
 
 const (
 	actionNone keyAction = iota
-	actionDone // 提交当前输入
-	actionQuit // Ctrl+C 退出
-	actionEOF  // Ctrl+D 空行 EOF
+	actionDone           // 提交当前输入
+	actionQuit           // Ctrl+C 退出
+	actionEOF            // Ctrl+D 空行 EOF
 )
 
 // Editor 行编辑器：维护多行 buffer、光标、历史与补全状态，负责自身的 ANSI 渲染。

@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	tcGetAttr = 0x5401 // TCGETS
-	tcSetAttr = 0x5402 // TCSETS
+	tcGetAttr  = 0x5401 // TCGETS
+	tcSetAttr  = 0x5402 // TCSETS
 	tiocGWinsz = 0x5413 // TIOCGWINSZ
 )
 

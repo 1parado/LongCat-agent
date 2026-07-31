@@ -88,7 +88,9 @@ func (m *Manager) loadDisabled() {
 	if err != nil {
 		return
 	}
-	var doc struct{ Disabled []string `json:"disabled"` }
+	var doc struct {
+		Disabled []string `json:"disabled"`
+	}
 	if json.Unmarshal(b, &doc) == nil {
 		for _, id := range doc.Disabled {
 			m.disabled[id] = true
