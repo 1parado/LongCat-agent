@@ -1,104 +1,27 @@
 # LongCat-frontend
 
-<p align="center">
-  <img src="longcat-color.svg" alt="LongCat-frontend" width="140">
-</p>
+轻量级前端开发 Agent，专注于 React、Next.js、Vue 3、Svelte、Tailwind 和设计系统开发。
 
-轻量级、以体验为先的前端开发 Agent。只做前端，不做通用编码：专注 React / Next.js（App Router）、Vue 3、Svelte、Tailwind 以及设计系统与组件生成、无障碍、性能优化。
+## 项目介绍
 
-## 特性
-
-- **多形态运行**：终端 TUI（`tui`）+ 桌面后端（`serve`，HTTP API + Web UI），可配合 Tauri 桌面壳使用。
-- **自定义 LLM 供应商**：只需 `URL + API Key + Protocol` 即可接入，支持 `openai_chat` / `openai_responses` / `anthropic_messages` / `ollama_chat`，并提供增删改查与切换。
-- **前端技能系统**：`frontend-skills/` 下按目录组织的前端专属技能（React 组件、Next.js App Router、Vue 3 组件、Tailwind 样式、无障碍等），按关键词自动匹配。
-- **Web UI**：内嵌单文件界面，grok 风深色主题 + LongCat 品牌图标，支持中英文（zh-CN / en-US）切换与本地持久化。
-- **轻量**：Go 标准库实现，构建产物 < 10 MB，无后台常驻进程。
+| 项目 | 说明 |
+| --- | --- |
+| 类型 | 前端开发 Agent |
+| 运行方式 | TUI、Web UI、Tauri 桌面应用 |
+| 后端 | Go |
+| 桌面端 | Tauri v2 |
+| 模型协议 | OpenAI Chat、OpenAI Responses、Anthropic Messages、Ollama |
+| Agent 能力 | 文件读写、预览、Diff、Undo、MCP 工具调用 |
+| Skills | 支持项目级和市场技能管理 |
+| IM 平台 | 支持 Feishu、Lark、微信扫码接入 |
+| 工作区 | 支持多工作区、多会话和本地持久化 |
 
 ## 界面预览
 
-![LongCat-frontend 桌面端界面](pic1.png)
+| 应用主页 | 内置浏览器 |
+| --- | --- |
+| ![应用主页](pic2.png) | ![内置浏览器](pic3.png) |
 
-## 目录结构
-
-```
-LongCat-frontend/
-├── cmd/LongCat-frontend/main.go   # 程序入口
-├── internal/
-│   ├── agent/                     # 核心 Agent 逻辑与前端提示词
-│   ├── ui/                        # 终端 TUI
-│   ├── frontend/                  # 前端技能加载与匹配
-│   ├── llm/                       # LLM 多协议接入与供应商管理
-│   └── server/                    # HTTP 服务 + 内嵌 Web UI
-├── frontend-skills/               # 前端专属技能（React / Vue3 / Tailwind ...）
-├── desktop/src-tauri/             # Tauri v2 桌面壳（Rust sidecar 启动 Go 后端）
-├── go.mod
-└── README.md
-```
-
-## 快速开始
-
-需要 Go 1.23+。
-
-### 构建
-
-```bash
-cd LongCat-frontend
-go build -o bin/LongCat-frontend.exe ./cmd/LongCat-frontend
-```
-
-也可直接使用仓库提供的脚本：`run.cmd`（Windows）或 `run.ps1`。
-
-### 配置供应商
-
-```bash
-# 添加一个 OpenAI 兼容供应商
-LongCat-frontend provider add \
-  -id my -url https://api.openai.com/v1 \
-  -key sk-xxx -protocol openai_chat -model gpt-4o-mini
-
-# 列出 / 切换 / 删除
-LongCat-frontend provider list
-LongCat-frontend provider use my
-LongCat-frontend provider remove my
-```
-
-配置保存在用户主目录 `~/.longcat-frontend/providers.json`（不随仓库提交）。
-
-### 运行
-
-```bash
-# 终端 TUI（默认）
-LongCat-frontend tui
-
-# 桌面后端（默认监听 127.0.0.1:5510），浏览器打开即可使用 Web UI
-LongCat-frontend serve
-LongCat-frontend serve -addr 127.0.0.1:5510
-```
-
-### 桌面应用
-
-`desktop/src-tauri` 为 Tauri v2 桌面壳，使用 Rust sidecar 启动上面构建的 Go 后端。需要 Rust 工具链：
-
-```bash
-cd desktop
-cargo build
-```
-
-## 协议支持
-
-`openai_chat` · `openai_responses` · `anthropic_messages` · `ollama_chat`
-
-### Agent tool-use
-
-先在 Web UI 侧栏点击“打开文件夹”（桌面版可用“浏览…”弹出系统文件夹选择器；浏览器模式可输入路径）。打开的文件夹就是 Agent 的真实工作路径；一个文件夹下可以创建、切换多个独立会话，消息历史会持久化保存。回复生成期间点击红色停止按钮即可中断当前模型请求；当前文件夹旁的 ↗ 按钮可在系统文件管理器中打开该位置（桌面版）。
-
-右上角“预览”会打开轻量浏览器：地址栏默认保持空白，只有输入地址或点击“首页”后才开始加载。支持本地绝对路径、`/api/preview/相对路径` 和完整的 `http(s)` 地址；本地预览文件始终限制在当前工作区内。
-
-会话在打开文件夹后会向模型暴露以下工具：
-
-- `list_directory`：列出工作空间目录
-- `read_file`：读取工作空间文本文件
-- `write_file`：写入工作空间文本文件
-- `load_skill`：按需读取某个已安装技能的 `SKILL.md`
-
-工具调用由 Agent 执行并把结果回传给模型；文件路径会限制在工作空间根目录内。OpenAI Chat、Anthropic Messages、OpenAI Responses 与 Ollama 均提供统一的 `ChatWithTools` 接口。
+| Skills 管理 | IM 平台 |
+| --- | --- |
+| ![Skills 管理](pic4.png) | ![IM 平台](pic5.png) |
