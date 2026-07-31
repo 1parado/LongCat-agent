@@ -202,6 +202,10 @@ func (a *api) previewFile(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "工作文件夹无效", http.StatusInternalServerError)
 		return
 	}
+	resolvedRoot := root
+	if realRoot, evalErr := filepath.EvalSymlinks(root); evalErr == nil {
+		resolvedRoot = filepath.Clean(realRoot)
+	}
 	requested := strings.TrimSpace(r.URL.Query().Get("path"))
 	if requested == "" {
 		requested = strings.TrimPrefix(r.PathValue("path"), "/")
@@ -216,23 +220,27 @@ func (a *api) previewFile(w http.ResponseWriter, r *http.Request) {
 	} else {
 		target = filepath.Clean(filepath.Join(root, filepath.FromSlash(requested)))
 	}
-	rel, _ := filepath.Rel(root, target)
+	if resolved, evalErr := filepath.EvalSymlinks(target); evalErr == nil {
+		target = filepath.Clean(resolved)
+	}
+	rel, _ := filepath.Rel(resolvedRoot, target)
 	if rel == "." || strings.HasSuffix(requested, "/") || strings.HasSuffix(requested, "\\") {
 		target = filepath.Join(target, "index.html")
-		rel, _ = filepath.Rel(root, target)
+		if resolved, evalErr := filepath.EvalSymlinks(target); evalErr == nil {
+			target = filepath.Clean(resolved)
+		}
+		rel, _ = filepath.Rel(resolvedRoot, target)
 	}
-	check, err := filepath.Rel(root, target)
+	check, err := filepath.Rel(resolvedRoot, target)
 	if err != nil || check == ".." || strings.HasPrefix(check, ".."+string(filepath.Separator)) {
 		http.Error(w, "预览路径必须位于当前文件夹内", http.StatusForbidden)
 		return
 	}
 	if resolved, evalErr := filepath.EvalSymlinks(target); evalErr == nil {
-		if resolvedRoot, rootErr := filepath.EvalSymlinks(root); rootErr == nil {
-			r, relErr := filepath.Rel(resolvedRoot, resolved)
-			if relErr != nil || r == ".." || strings.HasPrefix(r, ".."+string(filepath.Separator)) {
-				http.Error(w, "预览路径不能通过符号链接离开当前文件夹", http.StatusForbidden)
-				return
-			}
+		r, relErr := filepath.Rel(resolvedRoot, resolved)
+		if relErr != nil || r == ".." || strings.HasPrefix(r, ".."+string(filepath.Separator)) {
+			http.Error(w, "预览路径不能通过符号链接离开当前文件夹", http.StatusForbidden)
+			return
 		}
 	}
 	file, err := os.Open(target)
