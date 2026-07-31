@@ -2,11 +2,13 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
 
 	"LongCat-frontend/internal/frontend"
+	"LongCat-frontend/internal/i18n"
 	"LongCat-frontend/internal/llm"
 	"LongCat-frontend/internal/mcp"
 	"LongCat-frontend/internal/workspace"
@@ -57,7 +59,7 @@ func (t *ActivityTracker) set(item SubagentActivity) {
 // cancellation and error propagation deterministic.
 func SpawnSubagent(ctx context.Context, manager *llm.Manager, workspace string, skills []frontend.Skill, defs []AgentDefinition, definitionName, task string, depth int, tracker *ActivityTracker, mcpManager *mcp.Manager, undoStore *workspace.UndoStore) (string, error) {
 	if depth >= 2 {
-		return "", fmt.Errorf("子 Agent 委派深度已达到上限")
+		return "", errors.New(i18n.T(i18n.LocaleZH, i18n.MsgSubagentDepthExceeded, nil))
 	}
 	var definition AgentDefinition
 	for _, candidate := range defs {
@@ -67,7 +69,7 @@ func SpawnSubagent(ctx context.Context, manager *llm.Manager, workspace string, 
 		}
 	}
 	if definition.Name == "" {
-		return "", fmt.Errorf("Agent %q 不存在", definitionName)
+		return "", errors.New(i18n.T(i18n.LocaleZH, i18n.MsgSubagentNotFound, map[string]string{"name": definitionName}))
 	}
 	id := fmt.Sprintf("subagent-%d", time.Now().UnixNano())
 	activity := SubagentActivity{ID: id, Agent: definition.Name, Task: task, Status: "running", StartedAt: time.Now()}

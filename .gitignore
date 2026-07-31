@@ -5,6 +5,9 @@
 # ---- 构建产物 / 二进制 ----
 /bin/
 *.exe
+*.exe~
+*.exe.bak
+*.exe.old
 desktop/src-tauri/target/
 
 # ---- 内部工作区（Agent 记忆、日志等，勿提交）----
@@ -14,6 +17,8 @@ desktop/src-tauri/target/
 *.md
 !README.md
 !AGENTS.md
+!CONTRIBUTING.md
+!ISSUES.md
 
 # ---- 敏感信息 ----
 # 环境变量 / 密钥 / 证书
