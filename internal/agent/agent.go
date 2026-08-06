@@ -65,6 +65,10 @@ type Session struct {
 	OrchestrationDepth int
 	Undo               *workspace.UndoStore
 	DefinitionOverride string
+	// 上下文压缩（按上下文窗口百分比自动压缩旧历史）
+	CompressEnabled   bool    // 是否启用自动压缩
+	ContextWindow     int     // 模型上下文窗口（token），0 表示用默认 128000
+	CompressThreshold float64 // 触发压缩的占比（0~1），0 表示用默认 0.8
 }
 
 // ToolEvent describes one tool invocation for clients that want to render the
@@ -108,28 +112,44 @@ func (s *Session) Stream(ctx context.Context, input string, attachments []llm.At
 	return out, nil
 }
 
+// sendEvent 向流通道发送事件。若上下文已取消（消费者中途断开/不再读取），
+// 直接返回 false 让生产者及时退出——避免在 out <- 上永久阻塞导致 goroutine 泄漏。
+// 正常发送返回 true。通道的最终关闭仍由 Stream 的 defer close(out) 负责。
+func sendEvent(ctx context.Context, out chan<- StreamEvent, ev StreamEvent) bool {
+	select {
+	case out <- ev:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
 // runStream executes the multi-round agent loop, pushing deltas and tool events
 // into the channel and a final "done" event before returning. The channel is
-// always closed by the caller (Stream).
+// always closed by the caller (Stream) via defer, even on cancellation/panic.
+// 所有 out <- 发送都经 sendEvent 包裹，确保消费者断开时生产者能及时退出，不泄漏。
 func (s *Session) runStream(ctx context.Context, input string, attachments []llm.Attachment, out chan<- StreamEvent) {
 	provider, err := s.Manager.Active()
 	if err != nil {
-		out <- StreamEvent{Kind: "done", Err: err}
+		sendEvent(ctx, out, StreamEvent{Kind: "done", Err: err})
 		return
 	}
+	s.maybeCompress(ctx, provider)
 	msgs := []llm.Message{{Role: "system", Content: s.buildSystem(input)}}
 	msgs = append(msgs, s.Messages...)
 	msgs = append(msgs, llm.Message{Role: "user", Content: input, Attachments: attachments})
 
 	exec := &ToolExecutor{Workspace: s.Workspace, Skills: s.Skills, MCP: s.MCP, Undo: s.Undo, Agents: s.Agents, Manager: s.Manager, Activity: s.Activity, OrchestrationDepth: s.OrchestrationDepth}
 	onDelta := func(d string) {
-		out <- StreamEvent{Kind: "delta", Delta: d}
+		if !sendEvent(ctx, out, StreamEvent{Kind: "delta", Delta: d}) {
+			return
+		}
 	}
 	var reply string
 	for round := 0; round < 8; round++ {
 		if err := ctx.Err(); err != nil {
 			s.commitInterrupted(input, attachments, reply)
-			out <- StreamEvent{Kind: "done", Err: err}
+			sendEvent(ctx, out, StreamEvent{Kind: "done", Err: err})
 			return
 		}
 		result, err := llm.ChatWithTools(ctx, provider, llm.ChatOptions{Messages: msgs, Tools: exec.Definitions(), OnDelta: onDelta})
@@ -137,7 +157,7 @@ func (s *Session) runStream(ctx context.Context, input string, attachments []llm
 			if errors.Is(err, context.Canceled) {
 				s.commitInterrupted(input, attachments, reply)
 			}
-			out <- StreamEvent{Kind: "done", Err: err}
+			sendEvent(ctx, out, StreamEvent{Kind: "done", Err: err})
 			return
 		}
 		reply += result.Content
@@ -150,21 +170,25 @@ func (s *Session) runStream(ctx context.Context, input string, attachments []llm
 		for index, call := range result.ToolCalls {
 			if err := ctx.Err(); err != nil {
 				s.commitInterrupted(input, attachments, reply)
-				out <- StreamEvent{Kind: "done", Err: err}
+				sendEvent(ctx, out, StreamEvent{Kind: "done", Err: err})
 				return
 			}
 			callID := call.ID
 			if callID == "" {
 				callID = fmt.Sprintf("tool-%d-%d", round, index)
 			}
-			out <- StreamEvent{Kind: "tool", Tool: ToolEvent{ID: callID, Name: call.Function.Name, Arguments: call.Function.Arguments, Status: "running", Round: round + 1}}
+			if !sendEvent(ctx, out, StreamEvent{Kind: "tool", Tool: ToolEvent{ID: callID, Name: call.Function.Name, Arguments: call.Function.Arguments, Status: "running", Round: round + 1}}) {
+				return
+			}
 			toolOut, callErr := exec.ExecuteContext(ctx, call.Function.Name, call.Function.Arguments)
 			status := "success"
 			if callErr != nil {
 				toolOut = "工具执行失败: " + callErr.Error()
 				status = "error"
 			}
-			out <- StreamEvent{Kind: "tool", Tool: ToolEvent{ID: callID, Name: call.Function.Name, Arguments: call.Function.Arguments, Result: toolOut, Status: status, Round: round + 1}}
+			if !sendEvent(ctx, out, StreamEvent{Kind: "tool", Tool: ToolEvent{ID: callID, Name: call.Function.Name, Arguments: call.Function.Arguments, Result: toolOut, Status: status, Round: round + 1}}) {
+				return
+			}
 			msgs = append(msgs, llm.Message{Role: "tool", Content: toolOut, ToolCallID: call.ID, Name: call.Function.Name})
 		}
 	}
@@ -176,7 +200,7 @@ func (s *Session) runStream(ctx context.Context, input string, attachments []llm
 	if len(s.Messages) > 20 {
 		s.Messages = s.Messages[len(s.Messages)-20:]
 	}
-	out <- StreamEvent{Kind: "done", Final: reply}
+	sendEvent(ctx, out, StreamEvent{Kind: "done", Final: reply})
 }
 
 // modeDesc 模式到提示词片段的映射。
@@ -247,7 +271,7 @@ func NewSession(m *llm.Manager, skillsDir string) (*Session, error) {
 	if discovered, err := DiscoverAgents("", userAgents, bundledAgents); err == nil {
 		agents = discovered
 	}
-	return &Session{Manager: m, Skills: loaded, Agents: agents, Activity: NewActivityTracker()}, nil
+	return &Session{Manager: m, Skills: loaded, Agents: agents, Activity: NewActivityTracker(), CompressEnabled: true, ContextWindow: 128000, CompressThreshold: 0.8}, nil
 }
 
 // buildSystem 组装系统提示：基础提示 + 当前模式 + 工作空间 + 技能正文。
@@ -382,4 +406,99 @@ func (s *Session) ReloadSkills() {
 			s.Skills = append(s.Skills, sk)
 		}
 	}
+}
+
+// ---------- 上下文压缩（自动会话压缩） ----------
+
+const (
+	compressKeepRecent = 6 // 压缩时保留的最近消息条数
+	compressMinHistory = 8 // 历史少于此值不压缩
+)
+
+// summarizeFunc 可被测试替换，避免依赖真实 LLM。
+var summarizeFunc = summarize
+
+// maybeCompress 在每轮对话开始前检查上下文用量，若超过阈值则把较早的历史
+// 压缩成一条摘要消息，仅保留最近 compressKeepRecent 条原始消息。
+// 压缩失败（如 LLM 调用出错）时静默跳过，不阻塞正常对话。
+func (s *Session) maybeCompress(ctx context.Context, provider llm.Provider) {
+	if !s.CompressEnabled {
+		return
+	}
+	cw := s.ContextWindow
+	if cw <= 0 {
+		cw = 128000
+	}
+	th := s.CompressThreshold
+	if th <= 0 {
+		th = 0.8
+	}
+	if len(s.Messages) < compressMinHistory {
+		return
+	}
+	est := estimateTokens(append([]llm.Message{{Role: "system", Content: s.buildSystem("")}}, s.Messages...))
+	if float64(est) < float64(cw)*th {
+		return
+	}
+	if len(s.Messages) <= compressKeepRecent {
+		return
+	}
+	older := s.Messages[:len(s.Messages)-compressKeepRecent]
+	recent := s.Messages[len(s.Messages)-compressKeepRecent:]
+	summary, err := summarizeFunc(ctx, provider, renderConversation(older))
+	if err != nil || summary == "" {
+		return
+	}
+	s.Messages = append([]llm.Message{{
+		Role:    "user",
+		Content: "[历史对话压缩摘要]\n" + summary,
+	}}, recent...)
+}
+
+// estimateTokens 用粗略启发式估算 token 数（不引入分词依赖）。
+// 经验公式：每 ~4 个字符 ≈ 1 token，并计入附件与工具调用开销。
+func estimateTokens(msgs []llm.Message) int {
+	n := 0
+	for _, m := range msgs {
+		n += len([]rune(m.Content))/4 + 1
+		for _, a := range m.Attachments {
+			n += len([]rune(a.Text)) / 4
+			if a.Data != "" {
+				n += len(a.Data) / 4
+			}
+		}
+		for range m.ToolCalls {
+			n += 8
+		}
+	}
+	return n
+}
+
+// renderConversation 把消息列表渲染为纯文本，供压缩器消费。
+func renderConversation(msgs []llm.Message) string {
+	var b strings.Builder
+	for _, m := range msgs {
+		role := m.Role
+		if role == "tool" {
+			role = "tool(" + m.Name + ")"
+		}
+		b.WriteString(role)
+		b.WriteString(": ")
+		b.WriteString(m.Content)
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+// summarize 调用 LLM 将一段对话压缩为简洁摘要（中文）。
+func summarize(ctx context.Context, provider llm.Provider, conversation string) (string, error) {
+	const sys = "你是会话压缩器。请把下面的对话压缩为简洁摘要，保留：用户的关键需求与意图、已做出的决策与结论、重要的代码片段与文件路径、待办事项。去掉寒暄、冗余与重复内容。使用中文，长度不超过原文的 1/3。"
+	resp, err := llm.Chat(ctx, provider, []llm.Message{
+		{Role: "system", Content: sys},
+		{Role: "user", Content: conversation},
+	}, nil)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(resp), nil
 }

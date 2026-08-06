@@ -132,6 +132,14 @@ func ollamaChatWithTools(ctx context.Context, p Provider, opts ChatOptions) (Cha
 	return ChatResult{Content: full.String(), ToolCalls: ordered}, nil
 }
 
+// anthropicCacheControl 报告该协议是否需要在请求里显式打 cache_control 断点。
+// 仅 Anthropic 使用 cache_control: ephemeral 标记稳定前缀（system + 工具定义）。
+// OpenAI Chat 的前缀缓存由服务端自动生效（保持 system + tools 在请求头部即可），
+// 不识别也不接受 cache_control 字段，故不注入；Ollama 本地推理无缓存。
+func anthropicCacheControl(p Protocol) bool {
+	return p == ProtocolAnthropic
+}
+
 func endpoint(base, path string) string {
 	return strings.TrimRight(base, "/") + path
 }
@@ -175,6 +183,8 @@ func openAIChatMessages(msgs []Message) []any {
 	out := make([]any, 0, len(msgs))
 	for _, m := range msgs {
 		if len(m.Attachments) == 0 {
+			// OpenAI Chat 的前缀缓存由服务端自动生效：system 消息自然位于
+			// 请求头部且内容稳定，无需（也不接受）cache_control 字段。
 			out = append(out, m)
 			continue
 		}
@@ -549,7 +559,11 @@ func anthropicChat(ctx context.Context, p Provider, msgs []Message, onDelta Stre
 		"stream":     onDelta != nil,
 	}
 	if sys != "" {
-		body["system"] = sys
+		if anthropicCacheControl(ProtocolAnthropic) {
+			body["system"] = []map[string]any{{"type": "text", "text": sys, "cache_control": map[string]any{"type": "ephemeral"}}}
+		} else {
+			body["system"] = sys
+		}
 	}
 	headers := map[string]string{
 		"x-api-key":         p.APIKey,
@@ -736,12 +750,20 @@ func anthropicChatWithTools(ctx context.Context, p Provider, opts ChatOptions) (
 		}
 	}
 	tools := make([]map[string]any, 0, len(opts.Tools))
-	for _, t := range opts.Tools {
-		tools = append(tools, map[string]any{"name": t.Function.Name, "description": t.Function.Description, "input_schema": t.Function.Parameters})
+	for i, t := range opts.Tools {
+		tool := map[string]any{"name": t.Function.Name, "description": t.Function.Description, "input_schema": t.Function.Parameters}
+		if anthropicCacheControl(ProtocolAnthropic) && i == len(opts.Tools)-1 {
+			tool["cache_control"] = map[string]any{"type": "ephemeral"}
+		}
+		tools = append(tools, tool)
 	}
 	body := map[string]any{"model": p.Model, "max_tokens": 8192, "messages": anthropicMessages(opts.Messages), "tools": tools, "stream": opts.OnDelta != nil}
 	if system != "" {
-		body["system"] = system
+		if anthropicCacheControl(ProtocolAnthropic) {
+			body["system"] = []map[string]any{{"type": "text", "text": system, "cache_control": map[string]any{"type": "ephemeral"}}}
+		} else {
+			body["system"] = system
+		}
 	}
 	resp, err := postJSON(ctx, endpoint(p.URL, "/v1/messages"), map[string]string{"x-api-key": p.APIKey, "anthropic-version": "2023-06-01"}, body)
 	if err != nil {
