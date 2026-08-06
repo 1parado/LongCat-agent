@@ -541,12 +541,27 @@ func (t *TUI) dispatch(line string) (quit bool, out []string, w *wizardState) {
 		return false, []string{"✔ 模型已切换: " + args[0]}, nil
 	case "/mode":
 		if len(args) == 0 {
-			return false, []string{"当前模式: " + t.modeLabel() + "（可选: react|nextjs|vue|tailwind|svelte）"}, nil
+			return false, []string{"当前模式: " + t.modeLabel() + "（框架可选: react|nextjs|vue|tailwind|svelte；规划切换: plan|execute）"}, nil
 		}
-		if err := t.session.SetMode(args[0]); err != nil {
-			return false, []string{"✖ " + err.Error()}, nil
+		switch args[0] {
+		case "plan":
+			t.session.SetPlanMode(true)
+			return false, []string{"✔ 已切换到 Plan 规划模式：只规划、可创建文档，不修改代码。用 /execute 恢复执行。"}, nil
+		case "execute":
+			t.session.SetPlanMode(false)
+			return false, []string{"✔ 已切换到 Execute 执行模式：可正常执行代码改动。"}, nil
+		default:
+			if err := t.session.SetMode(args[0]); err != nil {
+				return false, []string{"✖ " + err.Error()}, nil
+			}
+			return false, []string{"✔ 模式已切换: " + args[0]}, nil
 		}
-		return false, []string{"✔ 模式已切换: " + args[0]}, nil
+	case "/plan":
+		t.session.SetPlanMode(true)
+		return false, []string{"✔ 已切换到 Plan 规划模式：只规划、可创建文档，不修改代码。用 /execute 恢复执行。"}, nil
+	case "/execute":
+		t.session.SetPlanMode(false)
+		return false, []string{"✔ 已切换到 Execute 执行模式：可正常执行代码改动。"}, nil
 	case "/clear", "/reset":
 		t.session.Reset()
 		return false, []string{"✔ 会话已重置"}, nil
@@ -622,10 +637,14 @@ func (t *TUI) finalizeWizard(w *wizardState) string {
 }
 
 func (t *TUI) modeLabel() string {
+	mode := "auto"
 	if m := t.session.Mode; m != "" {
-		return m
+		mode = m
 	}
-	return "auto"
+	if t.session.PlanMode {
+		return mode + " · plan"
+	}
+	return mode
 }
 
 // ---------- 行模式（非 tty 回退） ----------
@@ -760,7 +779,10 @@ func (t *TUI) helpLines() []string {
 		{"/model <name>", "切换当前供应商的模型"},
 		{"/remove <id>", "删除供应商"},
 		{"/skills", "列出前端技能"},
-		{"/mode <fw>", "切换模式: react|nextjs|vue|tailwind|svelte"},
+		{"/mode <fw>", "切换框架模式: react|nextjs|vue|tailwind|svelte"},
+		{"/plan", "切换到 Plan 规划模式（只规划、可建文档、不改代码）"},
+		{"/execute", "切换到 Execute 执行模式（可正常修改代码）"},
+		{"/mode plan|execute", "切换规划/执行模式"},
 		{"/theme [d|l]", "切换深色/浅色主题"},
 		{"/clear", "重置会话上下文"},
 		{"/help", "显示帮助"},

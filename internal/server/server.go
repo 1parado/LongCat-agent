@@ -31,6 +31,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"LongCat-frontend/internal/agent"
@@ -63,6 +64,12 @@ type api struct {
 	cancelMu        sync.Mutex
 	cancel          context.CancelFunc
 	mu              sync.Mutex // 串行化对话，轻量会话无需并发
+
+	// IM 远程会话：与桌面端会话完全隔离，各 IM 会话独占一个 agent.Session。
+	// 单独用 imMu 保护，避免被桌面端长对话持有的 mu 阻塞。
+	imMu        sync.Mutex
+	imSessions  map[string]*agent.Session
+	imWorkspace atomic.Value // string，当前工作空间路径快照
 }
 
 // Run 阻塞式启动 HTTP 服务。
@@ -95,11 +102,20 @@ func Run(addr string, m *llm.Manager, s *agent.Session) error {
 	}
 	s.MCP, s.Undo, s.Activity = mcpManager, undo, agent.NewActivityTracker()
 	a := &api{manager: m, session: s, market: mkt, workspaces: ws, undo: undo, mcp: mcpManager, im: imBridge, cache: cache.New[string, any](5*time.Minute, 1000), locale: locale, settingsPath: settingsPath}
+	a.imWorkspace.Store(s.Workspace)
+	// 注入 IM 消息处理器，并按上次持久化的启用意图恢复接收。
+	if imBridge != nil {
+		imBridge.SetHandler(a.handleIMMessage)
+		if imBridge.Enabled() {
+			imBridge.Start()
+		}
+	}
 	mcpManager.StartHealthChecks(context.Background(), 30*time.Second)
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /", a.index)
 	mux.HandleFunc("GET /api/state", a.state)
+	mux.HandleFunc("POST /api/session/planmode", a.setPlanMode)
 	mux.HandleFunc("POST /api/providers", a.addProvider)
 	mux.HandleFunc("PUT /api/providers/{id}", a.updateProvider)
 	mux.HandleFunc("DELETE /api/providers/{id}", a.removeProvider)
@@ -147,6 +163,7 @@ func Run(addr string, m *llm.Manager, s *agent.Session) error {
 	mux.HandleFunc("POST /api/im/scan/begin", a.imScanBegin)
 	mux.HandleFunc("POST /api/im/scan/poll", a.imScanPoll)
 	mux.HandleFunc("GET /api/im/doctor", a.imDoctor)
+	mux.HandleFunc("POST "+im.WebhookPathPrefix+"{id}", a.imWebhook)
 	mux.HandleFunc("GET /api/cache/stats", a.cacheStats)
 	mux.HandleFunc("DELETE /api/cache/invalidate", a.cacheInvalidate)
 	mux.HandleFunc("GET /api/settings/locale", a.getLocale)
@@ -157,19 +174,30 @@ func Run(addr string, m *llm.Manager, s *agent.Session) error {
 }
 
 // local 仅允许本机访问（Tauri WebView / 本地浏览器）。
+// 唯一例外是 IM 事件回调：开放平台必须能从外网推送事件，该路由自带
+// 签名与 verification_token 校验，未配置校验凭据时仍然只接受本机请求。
 func local(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		host := r.RemoteAddr
-		if i := strings.LastIndex(host, ":"); i > 0 {
-			host = host[:i]
+		if strings.HasPrefix(r.URL.Path, im.WebhookPathPrefix) {
+			next.ServeHTTP(w, r)
+			return
 		}
-		host = strings.Trim(host, "[]")
-		if host != "127.0.0.1" && host != "::1" && host != "localhost" {
+		if !isLoopbackAddr(r.RemoteAddr) {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// isLoopbackAddr 判断请求是否来自本机（含隧道客户端转发的场景）。
+func isLoopbackAddr(remoteAddr string) bool {
+	host := remoteAddr
+	if i := strings.LastIndex(host, ":"); i > 0 {
+		host = host[:i]
+	}
+	host = strings.Trim(host, "[]")
+	return host == "127.0.0.1" || host == "::1" || host == "localhost"
 }
 
 func (a *api) index(w http.ResponseWriter, r *http.Request) {
@@ -428,6 +456,7 @@ func (a *api) state(w http.ResponseWriter, _ *http.Request) {
 		"im":                a.imStateValue(),
 		"agent_activity":    activity,
 		"locale":            string(a.locale),
+		"plan_mode":         a.session.PlanMode,
 	})
 }
 
@@ -436,6 +465,22 @@ func (a *api) mcpStateValue() []mcp.MCPServer {
 		return []mcp.MCPServer{}
 	}
 	return a.mcp.List()
+}
+
+// setPlanMode 供桌面端 Web UI 切换规划/执行模式（POST /api/session/planmode，
+// body: {"on": true|false}）。与 /plan、/execute 斜杠命令等价，但无对话噪声、可即时回显。
+func (a *api) setPlanMode(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		On bool `json:"on"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		writeErr(w, 400, fmt.Errorf("无效的请求: %w", err))
+		return
+	}
+	a.mu.Lock()
+	a.session.SetPlanMode(in.On)
+	a.mu.Unlock()
+	writeJSON(w, 200, map[string]any{"ok": true, "plan_mode": in.On})
 }
 
 func (a *api) mcpState(w http.ResponseWriter, _ *http.Request) {
@@ -709,6 +754,27 @@ func (a *api) useProvider(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 
+// planExecuteSlash 解析规划/执行模式切换命令，返回模式 token 与是否匹配。
+// 仅识别 /plan、/execute、/mode plan、/mode execute；其它 /mode 子命令（框架模式）
+// 或 /技能名 不在此处理。
+func planExecuteSlash(msg string) (string, bool) {
+	m := strings.TrimSpace(msg)
+	switch m {
+	case "/plan", "/execute":
+		return strings.TrimPrefix(m, "/"), true
+	}
+	if strings.HasPrefix(m, "/mode") {
+		rest := strings.TrimSpace(strings.TrimPrefix(m, "/mode"))
+		switch rest {
+		case "plan":
+			return "plan", true
+		case "execute":
+			return "execute", true
+		}
+	}
+	return "", false
+}
+
 // chat SSE 流式对话。
 func (a *api) chat(w http.ResponseWriter, r *http.Request) {
 	var in struct {
@@ -727,6 +793,32 @@ func (a *api) chat(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.TrimSpace(in.Message) == "" && len(in.Attachments) == 0 {
 		writeErr(w, 400, fmt.Errorf("message 或附件不能为空"))
+		return
+	}
+	// 处理规划/执行模式切换命令（/plan、/execute、/mode plan、/mode execute）。
+	// 这些命令不送入模型，直接响应后返回。
+	if cmd, ok := planExecuteSlash(in.Message); ok {
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			writeErr(w, 500, fmt.Errorf("streaming unsupported"))
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-cache")
+		send := func(event string, payload any) {
+			data, _ := json.Marshal(payload)
+			fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, data)
+			flusher.Flush()
+		}
+		switch cmd {
+		case "plan":
+			a.session.SetPlanMode(true)
+			send("message", "✔ 已切换到 Plan 规划模式：只规划、可创建文档，不修改代码。用 /execute 恢复执行。")
+		case "execute":
+			a.session.SetPlanMode(false)
+			send("message", "✔ 已切换到 Execute 执行模式：可正常执行代码改动。")
+		}
+		send("done", true)
 		return
 	}
 	// 设置模式（空则保持当前模式；非法模式忽略）
@@ -1336,6 +1428,7 @@ func (a *api) activateSessionLocked(id string) error {
 	a.activeWorkspace = w
 	a.activeSessionID = id
 	a.session.Workspace = w.Path
+	a.imWorkspace.Store(w.Path)
 	a.session.Messages = append([]llm.Message(nil), r.Messages...)
 	a.session.Mode = r.Mode
 	a.session.ActiveSkill = r.ActiveSkill

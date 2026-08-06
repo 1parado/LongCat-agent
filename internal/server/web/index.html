@@ -316,6 +316,12 @@ html[data-wallpaper="1"] .composer{background:color-mix(in srgb,var(--bg-input) 
 .send-btn:hover{background:var(--accent-hover)}
 .send-btn:disabled{opacity:.4;cursor:not-allowed}
 .workspace-chip{max-width:210px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* 规划/执行模式切换 */
+.mode-toggle{display:inline-flex;align-items:center;height:26px;border-radius:var(--radius-sm);background:var(--bg-hover);padding:2px;gap:2px}
+.mode-opt{border:none;background:transparent;height:22px;padding:0 9px;border-radius:var(--radius-sm);
+  font-size:11px;color:var(--text-secondary);cursor:pointer;font-family:inherit;transition:background var(--motion-fast),color var(--motion-fast)}
+.mode-opt:hover{color:var(--text-primary)}
+.mode-opt.active{background:var(--accent);color:var(--accent-fg);font-weight:600}
 .stop-btn{width:30px;height:30px;border:none;border-radius:var(--radius-full);background:var(--danger);color:#fff;cursor:pointer;font-size:13px;display:none;align-items:center;justify-content:center}
 .composer-hint{font-size:11px;color:var(--text-tertiary);text-align:center;padding:7px 0 0}
 
@@ -475,6 +481,11 @@ html[data-wallpaper="1"] .composer{background:color-mix(in srgb,var(--bg-input) 
 .im-pane-qr{display:none;align-items:center;gap:15px;margin-top:12px;padding:12px;border:1px solid var(--border-subtle);border-radius:var(--radius-lg);background:var(--bg-elevated)}
 .im-pane-qr.open{display:flex}.im-pane-qr img{width:156px;height:156px;padding:6px;border-radius:7px;background:#fff}.im-pane-qr-copy{min-width:0;color:var(--text-secondary);font-size:11px;line-height:1.55}.im-pane-qr-copy strong{display:block;color:var(--text-primary);font-size:12px;margin-bottom:5px}.im-pane-qr-copy code{display:block;color:var(--accent-hover);font:10px/1.45 var(--font-mono);word-break:break-all;margin-top:6px}
 .im-pane-instances{border-top:1px solid var(--border-subtle);padding:15px 0 28px}.im-pane-instances-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}.im-pane-instances-head h3{font-size:13px;margin:0}.im-pane-bridge-state{font-size:10px;color:var(--text-tertiary)}.im-pane-bridge-state.ok{color:var(--success)}
+.im-receive-ctl{display:flex;align-items:center;gap:10px}
+.im-webhook-card{margin-top:14px;padding:13px 14px;border:1px solid var(--border-subtle);border-radius:var(--radius-lg);background:var(--bg-elevated)}
+.im-webhook-head{display:flex;flex-direction:column;gap:4px;margin-bottom:10px}.im-webhook-head h4{margin:0;font-size:12px}.im-webhook-head span{color:var(--text-tertiary);font-size:11px;line-height:1.55}
+.im-webhook-row{display:flex;flex-wrap:wrap;gap:8px}.im-webhook-row .form-select{flex:0 0 150px}.im-webhook-row .form-input{flex:1 1 170px;min-width:0}
+.im-webhook-url{display:block;margin-top:9px;padding:7px 9px;border-radius:7px;background:var(--bg-subtle,rgba(127,127,127,.08));color:var(--accent-hover);font:10px/1.5 var(--font-mono);word-break:break-all}
 @media(max-width:760px){.im-platform-grid{grid-template-columns:1fr}.im-pane{padding:0 18px}.im-pane-qr{align-items:flex-start}.im-pane-qr img{width:128px;height:128px}}
 
 /* Skills Popup */
@@ -652,8 +663,27 @@ html[data-wallpaper="1"] .composer{background:color-mix(in srgb,var(--bg-input) 
       <div class="im-pane-qr" id="imPaneQrBox"><img id="imPaneQrImage" alt="IM QR"><div class="im-pane-qr-copy"><strong id="imPaneQrTitle" data-i18n="imScanTitle">请使用对应 App 扫描二维码</strong><span id="imPaneQrHint" data-i18n="scanWaiting">等待扫码确认…</span><code id="imPaneQrCode"></code></div></div>
     </section>
     <section class="im-pane-instances">
-      <div class="im-pane-instances-head"><h3 data-i18n="imInstancesTitle">已接入实例</h3><span class="im-pane-bridge-state" id="imPaneBridgeState">—</span></div>
+      <div class="im-pane-instances-head">
+        <h3 data-i18n="imInstancesTitle">已接入实例</h3>
+        <div class="im-receive-ctl">
+          <span class="im-pane-bridge-state" id="imPaneBridgeState">—</span>
+          <button class="btn" id="btnImReceive" onclick="toggleIMReceive()" data-i18n="imEnableReceive">启用接收</button>
+        </div>
+      </div>
       <div id="imPaneInstances"></div>
+      <div class="im-webhook-card">
+        <div class="im-webhook-head">
+          <h4 data-i18n="imWebhookTitle">接收方式：WebSocket 长连接（默认）</h4>
+          <span data-i18n="imWebhookHint">扫码创建机器人时已通过 Addons 自动订阅 im.message.receive_v1 并申请消息权限。Agent 通过 WebSocket 长连接直接收消息，无需公网回调地址、encrypt_key 或 verification_token。下方为可选的 HTTP 回调模式（需自行将地址暴露到公网）。</span>
+        </div>
+        <div class="im-webhook-row">
+          <select class="form-select" id="imWebhookInstance" onchange="renderIMWebhookURL()" aria-label="IM 实例"></select>
+          <input class="form-input" id="imWebhookEncrypt" placeholder="Encrypt Key（可选）">
+          <input class="form-input" id="imWebhookToken" placeholder="Verification Token（可选）">
+          <button class="btn btn-primary" onclick="saveIMWebhookSecrets()" data-i18n="imWebhookSave">保存并重启接收</button>
+        </div>
+        <code class="im-webhook-url" id="imWebhookUrl">—</code>
+      </div>
     </section>
   </div>
 
@@ -670,6 +700,10 @@ html[data-wallpaper="1"] .composer{background:color-mix(in srgb,var(--bg-input) 
           <button class="chip-btn attach-btn" id="btnAttach" data-i18n-title="attachFiles" data-i18n-aria="attachFiles" title="上传文件" aria-label="上传文件">＋</button>
           <button class="chip-btn workspace-chip" id="chipWorkspace" title="当前工作空间">⌂ 未选择工作空间</button>
           <button class="chip-btn" id="chipModel">—</button>
+          <div class="mode-toggle" id="modeToggle" title="切换规划/执行模式：规划仅做方案与文档，执行可改代码">
+            <button class="mode-opt" id="modePlan" data-mode="plan">规划</button>
+            <button class="mode-opt active" id="modeExecute" data-mode="execute">执行</button>
+          </div>
           <button class="chip-btn" id="chipReset" data-i18n="resetChip">↺ 重置</button>
           <button class="chip-btn" id="btnUndo" data-i18n="undoLast" data-i18n-title="undoRecent" title="撤销最近一次 Agent 文件修改">↶ 撤销</button>
           <div class="grow"></div>
@@ -833,9 +867,9 @@ const I18N={
   attachFiles:'上传文件',removeAttachment:'移除附件',
   fileTooLarge:'文件过大（单个不超过 15 MB）',attachmentsTooMany:'最多上传 10 个文件',
   attachmentsTotalTooLarge:'附件总大小不能超过 48 MB',
-  resetChip:'↺ 重置',skillsCount:'{count} 个技能',toggleSidebar:'切换侧栏',expandWorkspace:'展开工作空间',revealWorkspace:'在文件管理器中打开',skillsMarket:'Skills 市场',currentWorkspace:'当前工作空间',undoRecent:'撤销最近一次 Agent 文件修改',stopReply:'中断回复',sendMessage:'发送',
+  resetChip:'↺ 重置',skillsCount:'{count} 个技能',toggleSidebar:'切换侧栏',expandWorkspace:'展开工作空间',revealWorkspace:'在文件管理器中打开',skillsMarket:'Skills 市场',currentWorkspace:'当前工作空间',undoRecent:'撤销最近一次 Agent 文件修改',stopReply:'中断回复',sendMessage:'发送',modePlanOn:'✔ 已切换到 Plan 规划模式：只规划、可建文档、不改代码',modeExecuteOn:'✔ 已切换到 Execute 执行模式：可正常修改代码',
   undoLast:'↶ 撤销',workspaceChanged:'工作区文件已变化：{path}',
-  mcpMenu:'MCP',activityMenu:'活动',imMenu:'IM 平台',imPaneKicker:'REMOTE CHANNELS / ONBOARDING',imPaneTitle:'IM 平台',imPaneIntro:'选择一个平台，使用二维码完成接入。凭据会保存在本机，Agent 可以通过桥接服务响应对应会话。',imFeishuDesc:'飞书个人 Agent：扫码授权并自动创建应用凭据。',imLarkDesc:'Lark Personal Agent：使用国际版账号体系扫码登录。',imWeixinDesc:'微信 iLink Bot：扫码确认机器人登录，二维码过期会自动刷新。',configureIM:'配置接入',imConnectTitle:'接入平台',imConnectHint:'扫码完成后会保存为一个 IM 实例',imInstancePlaceholder:'实例名称（可选）',imScanTitle:'请使用对应 App 扫描二维码',imInstancesTitle:'已接入实例',imNotConnected:'未接入',imConfigured:'已配置',imActive:'运行中',controlRoomTitle:'MCP 控制室',controlRoomKicker:'服务状态与工具',activityRoomTitle:'工作区活动',activityRoomKicker:'Agent 运行与文件变更',mcpSection:'MCP 服务',imSection:'IM Bridge',agentActivitySection:'Agent 活动',agentActivityHint:'实时子 Agent 任务',changesSection:'工作区变更',refreshBtn:'刷新',scanLogin:'扫码登录',emptyMcp:'尚未配置 MCP 服务',emptyIm:'尚未配置 IM 实例',emptyActivity:'当前没有运行中的子 Agent',emptyChanges:'暂无 Agent 文件变更',imStopped:'已停止',imRunning:'运行中',imDegraded:'需要处理',scanWaiting:'等待扫码确认…',scanDone:'登录完成，凭据已保存',scanError:'扫码失败：{error}',diffBtn:'查看 Diff',openBtn:'打开',
+  mcpMenu:'MCP',activityMenu:'活动',imMenu:'IM 平台',imPaneKicker:'REMOTE CHANNELS / ONBOARDING',imPaneTitle:'IM 平台',imPaneIntro:'选择一个平台，使用二维码完成接入。凭据会保存在本机，Agent 可以通过桥接服务响应对应会话。',imFeishuDesc:'飞书个人 Agent：扫码授权并自动创建应用凭据。',imLarkDesc:'Lark Personal Agent：使用国际版账号体系扫码登录。',imWeixinDesc:'微信 iLink Bot：扫码确认机器人登录，二维码过期会自动刷新。',configureIM:'配置接入',imConnectTitle:'接入平台',imConnectHint:'扫码完成后会保存为一个 IM 实例',imInstancePlaceholder:'实例名称（可选）',imScanTitle:'请使用对应 App 扫描二维码',imInstancesTitle:'已接入实例',imNotConnected:'未接入',imConfigured:'已配置',imActive:'运行中',controlRoomTitle:'MCP 控制室',controlRoomKicker:'服务状态与工具',activityRoomTitle:'工作区活动',activityRoomKicker:'Agent 运行与文件变更',mcpSection:'MCP 服务',imSection:'IM Bridge',agentActivitySection:'Agent 活动',agentActivityHint:'实时子 Agent 任务',changesSection:'工作区变更',refreshBtn:'刷新',scanLogin:'扫码登录',emptyMcp:'尚未配置 MCP 服务',emptyIm:'尚未配置 IM 实例',emptyActivity:'当前没有运行中的子 Agent',emptyChanges:'暂无 Agent 文件变更',imStopped:'已停止',imRunning:'运行中',imDegraded:'需要处理',imReceiving:'接收中',imEnableReceive:'启用接收',imDisableReceive:'停用接收',imReceiveOn:'已启用 IM 接收',imReceiveOff:'已停用 IM 接收',imWebhookTitle:'事件订阅（接收消息）',imWebhookHint:'扫码只创建了机器人；还需把下面的回调地址填到开放平台「事件与回调」并订阅 im.message.receive_v1，Agent 才能收到消息。',imWebhookSave:'保存并重启接收',imWebhookSaved:'已保存事件订阅凭据',scanWaiting:'等待扫码确认…',scanDone:'登录完成，凭据已保存',scanError:'扫码失败：{error}',diffBtn:'查看 Diff',openBtn:'打开',
 toggleTheme:'切换主题',preview:'预览',settings:'设置',
    previewTitle:'实时预览',
   providerModalTitle:'LLM 供应商管理',
@@ -865,9 +899,9 @@ toggleTheme:'切换主题',preview:'预览',settings:'设置',
   attachFiles:'Upload files',removeAttachment:'Remove attachment',
   fileTooLarge:'File is too large (15 MB max)',attachmentsTooMany:'Up to 10 files',
   attachmentsTotalTooLarge:'Attachments must be 48 MB or less in total',
-  resetChip:'↺ Reset',skillsCount:'{count} skills',toggleSidebar:'Toggle sidebar',expandWorkspace:'Expand workspace',revealWorkspace:'Reveal in file manager',skillsMarket:'Skills market',currentWorkspace:'Current workspace',undoRecent:'Undo the latest Agent file change',stopReply:'Stop reply',sendMessage:'Send',
+  resetChip:'↺ Reset',skillsCount:'{count} skills',toggleSidebar:'Toggle sidebar',expandWorkspace:'Expand workspace',revealWorkspace:'Reveal in file manager',skillsMarket:'Skills market',currentWorkspace:'Current workspace',undoRecent:'Undo the latest Agent file change',stopReply:'Stop reply',sendMessage:'Send',modePlanOn:'✔ Switched to Plan mode: planning & docs only, no code changes',modeExecuteOn:'✔ Switched to Execute mode: code changes allowed',
   undoLast:'↶ Undo',workspaceChanged:'Workspace file changed: {path}',
-  mcpMenu:'MCP',activityMenu:'Activity',imMenu:'IM platforms',imPaneKicker:'REMOTE CHANNELS / ONBOARDING',imPaneTitle:'IM platforms',imPaneIntro:'Choose a platform and complete onboarding with a QR code. Credentials stay on this device so the Agent can respond through the bridge.',imFeishuDesc:'Feishu Personal Agent: authorize by QR and create app credentials automatically.',imLarkDesc:'Lark Personal Agent: sign in with the international account flow.',imWeixinDesc:'Weixin iLink Bot: confirm the bot login by QR; expired codes refresh automatically.',configureIM:'Configure',imConnectTitle:'Connect a platform',imConnectHint:'A new IM instance is saved after QR confirmation',imInstancePlaceholder:'Instance name (optional)',imScanTitle:'Scan with the matching app',imInstancesTitle:'Connected instances',imNotConnected:'Not connected',imConfigured:'Configured',imActive:'Running',controlRoomTitle:'MCP control room',controlRoomKicker:'Service status and tools',activityRoomTitle:'Workspace activity',activityRoomKicker:'Agent runs and file changes',mcpSection:'MCP servers',imSection:'IM Bridge',agentActivitySection:'Agent activity',agentActivityHint:'Live sub-agent tasks',changesSection:'Workspace changes',refreshBtn:'Refresh',scanLogin:'Scan to sign in',emptyMcp:'No MCP servers configured',emptyIm:'No IM instances configured',emptyActivity:'No sub-agents are running',emptyChanges:'No Agent file changes yet',imStopped:'Stopped',imRunning:'Running',imDegraded:'Needs attention',scanWaiting:'Waiting for scan confirmation…',scanDone:'Signed in; credentials saved',scanError:'Scan failed: {error}',diffBtn:'View Diff',openBtn:'Open',
+  mcpMenu:'MCP',activityMenu:'Activity',imMenu:'IM platforms',imPaneKicker:'REMOTE CHANNELS / ONBOARDING',imPaneTitle:'IM platforms',imPaneIntro:'Choose a platform and complete onboarding with a QR code. Credentials stay on this device so the Agent can respond through the bridge.',imFeishuDesc:'Feishu Personal Agent: authorize by QR and create app credentials automatically.',imLarkDesc:'Lark Personal Agent: sign in with the international account flow.',imWeixinDesc:'Weixin iLink Bot: confirm the bot login by QR; expired codes refresh automatically.',configureIM:'Configure',imConnectTitle:'Connect a platform',imConnectHint:'A new IM instance is saved after QR confirmation',imInstancePlaceholder:'Instance name (optional)',imScanTitle:'Scan with the matching app',imInstancesTitle:'Connected instances',imNotConnected:'Not connected',imConfigured:'Configured',imActive:'Running',controlRoomTitle:'MCP control room',controlRoomKicker:'Service status and tools',activityRoomTitle:'Workspace activity',activityRoomKicker:'Agent runs and file changes',mcpSection:'MCP servers',imSection:'IM Bridge',agentActivitySection:'Agent activity',agentActivityHint:'Live sub-agent tasks',changesSection:'Workspace changes',refreshBtn:'Refresh',scanLogin:'Scan to sign in',emptyMcp:'No MCP servers configured',emptyIm:'No IM instances configured',emptyActivity:'No sub-agents are running',emptyChanges:'No Agent file changes yet',imStopped:'Stopped',imRunning:'Running',imDegraded:'Needs attention',imReceiving:'Receiving',imEnableReceive:'Enable receiving',imDisableReceive:'Disable receiving',imReceiveOn:'IM receiving enabled',imReceiveOff:'IM receiving disabled',imWebhookTitle:'Event subscription (inbound)',imWebhookHint:'The QR flow only creates the bot. Add the callback URL below to the open platform under Events & Callbacks and subscribe to im.message.receive_v1 before the Agent can receive messages.',imWebhookSave:'Save & restart receiving',imWebhookSaved:'Event subscription credentials saved',scanWaiting:'Waiting for scan confirmation…',scanDone:'Signed in; credentials saved',scanError:'Scan failed: {error}',diffBtn:'View Diff',openBtn:'Open',
 toggleTheme:'Toggle theme',preview:'Preview',settings:'Settings',
    previewTitle:'Live Preview',
   providerModalTitle:'LLM Provider Management',
@@ -949,11 +983,11 @@ async function refreshMcp(){try{await fetch('/api/mcp/refresh',{method:'POST'});
 function imScanRefs(){return {name:'imPaneName',box:'imPaneQrBox',image:'imPaneQrImage',hint:'imPaneQrHint',code:'imPaneQrCode'};}
 async function beginImScan(channel,surface){
   if(imScanTimer)clearTimeout(imScanTimer);
-  imScanState={channel,deviceCode:'',surface};const ui=imScanRefs();$(ui.box).classList.remove('open');
-  try{const r=await fetch('/api/im/scan/begin',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({channel,options:{}})}),d=await r.json();if(d.error){toast(d.error);return;}imScanState.deviceCode=d.device_code;$(ui.image).src=d.verification_uri;$(ui.code).textContent=d.device_code;$(ui.hint).textContent=t('scanWaiting');$(ui.box).classList.add('open');pollImScan(Math.max(1000,Number(d.interval_sec||3)*1000));}catch(e){toast(t('errorPrefix')+String(e));}
+  imScanState={channel,deviceCode:'',surface,interval:3000,backoff:0};const ui=imScanRefs();$(ui.box).classList.remove('open');
+  try{const r=await fetch('/api/im/scan/begin',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({channel,options:{}})}),d=await r.json();if(d.error){toast(d.error);return;}imScanState.deviceCode=d.device_code;imScanState.interval=Math.max(2000,Number(d.interval_sec||3)*1000);$(ui.image).src=d.verification_uri;$(ui.code).textContent=d.device_code;$(ui.hint).textContent=t('scanWaiting');$(ui.box).classList.add('open');pollImScan(imScanState.interval);}catch(e){toast(t('errorPrefix')+String(e));}
 }
 function startImPaneScan(){beginImScan($('imPaneChannel').value,'pane');}
-function pollImScan(delay){imScanTimer=setTimeout(async()=>{if(!imScanState)return;const ui=imScanRefs();try{const r=await fetch('/api/im/scan/poll',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({channel:imScanState.channel,device_code:imScanState.deviceCode})}),d=await r.json();if(d.error&&!d.status){toast(tf('scanError',{error:d.error}));return;}if(d.verification_uri){$(ui.image).src=d.verification_uri;}if(d.device_code){imScanState.deviceCode=d.device_code;$(ui.code).textContent=d.device_code;}if(d.status==='completed'){const channel=d.platform||imScanState.channel;const name=$(ui.name).value.trim()||channel;const secrets={app_id:d.app_id||'',app_secret:d.app_secret||''};const payload={instance:{id:'',channel,name,enabled:true,options:{},acl:{},project_scope:'current',presenter:'off',status:'configured'},secrets,connect_after_save:true};const saved=await fetch('/api/im/instances',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});if(!saved.ok){const err=await saved.json();toast(err.error||'保存失败');return;}$(ui.hint).textContent=t('scanDone');imScanState=null;if(document.getElementById('imPane')?.classList.contains('open'))await loadIMPane();else await loadControlRoom();return;}if(d.status==='denied'||d.status==='expired'||d.status==='error'){toast(tf('scanError',{error:d.error||d.status}));return;}pollImScan(2000);}catch(e){toast(t('errorPrefix')+String(e));}},delay);}
+function pollImScan(delay){imScanTimer=setTimeout(async()=>{if(!imScanState)return;const ui=imScanRefs();try{const r=await fetch('/api/im/scan/poll',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({channel:imScanState.channel,device_code:imScanState.deviceCode})}),d=await r.json();if(d.error&&!d.status){toast(tf('scanError',{error:d.error}));return;}if(d.verification_uri){$(ui.image).src=d.verification_uri;}if(d.device_code){imScanState.deviceCode=d.device_code;$(ui.code).textContent=d.device_code;}if(typeof d.interval_sec==='number'&&d.interval_sec>0){imScanState.interval=Math.max(2000,d.interval_sec*1000);}if(d.status==='completed'){const channel=d.platform||imScanState.channel;const name=$(ui.name).value.trim()||channel;const secrets={app_id:d.app_id||'',app_secret:d.app_secret||''};const payload={instance:{id:'',channel,name,enabled:true,options:{},acl:{},project_scope:'current',presenter:'off',status:'configured'},secrets,connect_after_save:true};const saved=await fetch('/api/im/instances',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});if(!saved.ok){const err=await saved.json();toast(err.error||'保存失败');return;}$(ui.hint).textContent=t('scanDone');imScanState=null;if(document.getElementById('imPane')?.classList.contains('open'))await loadIMPane();else await loadControlRoom();return;}if(d.status==='denied'||d.status==='expired'||d.status==='error'){toast(tf('scanError',{error:d.error||d.status}));return;}if(d.slow_down){imScanState.backoff=(imScanState.backoff||0)+2000;$(ui.hint).textContent=t('scanWaiting');}const next=imScanState.interval+(imScanState.backoff||0);pollImScan(next);}catch(e){toast(t('errorPrefix')+String(e));}},delay);}
 async function showDiff(encoded){const path=decodeURIComponent(encoded);try{const r=await fetch('/api/workspace/diff?path='+encodeURIComponent(path)),d=await r.json();if(d.error){toast(d.error);return;}$('activityDiff').textContent=d.unified||`${d.before||''}\n→\n${d.after||''}`;$('activityDiff').classList.add('open');}catch(e){toast(t('errorPrefix')+String(e));}}
 
 // ============================================================
@@ -1047,6 +1081,8 @@ async function refresh(){
 
   const act=state.providers.find(p=>p.active);
   $('chipModel').textContent=act?`◇ ${act.model||act.id}`:'◇ —';
+  // 反映当前规划/执行模式
+  setModeToggleUI(!!state.plan_mode);
   $('contextBar').innerHTML=[
     act?`<span class="ctx-chip">☁ ${esc(act.id)}</span>`:'',
     `<span class="ctx-chip">◆ ${esc(tf('skillsCount',{count:state.skills.length}))}</span>`
@@ -1063,6 +1099,23 @@ async function useProvider(id){
   await fetch(`/api/providers/${encodeURIComponent(id)}/use`,{method:'POST'});
   toast(tf('toastSwitched',{id}));refresh();
 }
+// 规划/执行模式切换：根据后端返回的状态高亮对应按钮
+function setModeToggleUI(plan){
+  $('modePlan').classList.toggle('active', !!plan);
+  $('modeExecute').classList.toggle('active', !plan);
+}
+async function togglePlanMode(plan){
+  try{
+    const r=await fetch('/api/session/planmode',{method:'POST',
+      headers:{'Content-Type':'application/json'},body:JSON.stringify({on:plan})});
+    const d=await r.json();
+    if(d.error){toast(t('errorPrefix')+d.error);return;}
+    setModeToggleUI(!!d.plan_mode);
+    toast(plan?t('modePlanOn'):t('modeExecuteOn'));
+  }catch(e){toast(t('errorPrefix')+String(e));}
+}
+$('modePlan').onclick=()=>togglePlanMode(true);
+$('modeExecute').onclick=()=>togglePlanMode(false);
 function editProvider(id){
   const p=state.providers.find(x=>x.id===id);if(!p)return;
   editing=id;$('formTitle').textContent=t('editProvider')+' — '+id;
@@ -1519,10 +1572,54 @@ async function loadIMPane(){
       el.className='im-platform-state '+(item?.has_credentials?'ok':'');
       el.textContent=item?.status==='connected'?t('imActive'):item?.has_credentials?t('imConfigured'):t('imNotConnected');
     });
-    const bridgeState=$('imPaneBridgeState');bridgeState.className='im-pane-bridge-state '+(bridge.state==='running'?'ok':'');bridgeState.textContent=bridge.state==='running'?t('imRunning'):t('imStopped');
-    $('imPaneInstances').innerHTML=instances.length?instances.map(item=>signalRow(item.name||item.channel,[item.channel,item.has_credentials?t('imConfigured'):t('imNotConnected'),item.enabled?t('imActive'):t('imStopped')].join(' · '),controlTone(item.status,item.has_credentials),`<button class="btn signal-action" onclick="deleteIMPaneInstance('${esc(item.id)}')">×</button>`)).join(''):`<div class="control-empty">${esc(t('emptyIm'))}</div>`;
+    const receiving=!!bridge.receiving;
+    const bridgeState=$('imPaneBridgeState');bridgeState.className='im-pane-bridge-state '+(receiving?'ok':'');
+    const transportLabel=bridge.transport==='longconn'?'WebSocket 长连接':bridge.transport==='webhook'?'HTTP 回调':'';
+    bridgeState.textContent=(receiving?t('imReceiving'):t('imStopped'))+(transportLabel?' · '+transportLabel:'')+(bridge.last_error?' · '+bridge.last_error:'');
+    const btn=$('btnImReceive');if(btn){btn.textContent=receiving?t('imDisableReceive'):t('imEnableReceive');btn.classList.toggle('btn-primary',!receiving);}
+    imPaneInstanceCache=instances;
+    $('imPaneInstances').innerHTML=instances.length?instances.map(item=>signalRow(
+      item.name||item.channel,
+      [item.channel,item.has_credentials?t('imConfigured'):t('imNotConnected'),item.enabled?t('imActive'):t('imStopped'),item.receiving?t('imReceiving'):'',item.last_error||''].filter(Boolean).join(' · '),
+      controlTone(item.last_error?'error':item.status,item.has_credentials&&!item.last_error),
+      `<button class="btn signal-action" onclick="deleteIMPaneInstance('${esc(item.id)}')">×</button>`)).join(''):`<div class="control-empty">${esc(t('emptyIm'))}</div>`;
+    const picker=$('imWebhookInstance');
+    if(picker){const prev=picker.value;picker.innerHTML=instances.map(item=>`<option value="${esc(item.id)}">${esc(item.name||item.channel)}</option>`).join('');if(prev&&instances.some(i=>i.id===prev))picker.value=prev;renderIMWebhookURL();}
     selectIMChannel($('imPaneChannel').value||'feishu');
   }catch(e){$('imPaneInstances').innerHTML=`<div class="control-empty">${esc(t('errorPrefix')+String(e))}</div>`;}
+}
+let imPaneInstanceCache=[];
+function renderIMWebhookURL(){
+  const el=$('imWebhookUrl');if(!el)return;
+  const id=$('imWebhookInstance')?.value;
+  const item=imPaneInstanceCache.find(i=>i.id===id);
+  el.textContent=item?(location.origin+(item.webhook_path||('/api/im/webhook/'+item.id))):'—';
+}
+async function toggleIMReceive(){
+  const btn=$('btnImReceive');const on=btn&&btn.textContent===t('imDisableReceive');
+  try{
+    const r=await fetch(on?'/api/im/stop':'/api/im/start',{method:'POST'});
+    const d=await r.json();
+    if(d.error){toast(t('errorPrefix')+d.error);return;}
+    toast(d.receiving?t('imReceiveOn'):t('imReceiveOff'));
+    if(d.last_error)toast(d.last_error);
+    await loadIMPane();
+  }catch(e){toast(t('errorPrefix')+String(e));}
+}
+async function saveIMWebhookSecrets(){
+  const id=$('imWebhookInstance')?.value;
+  const item=imPaneInstanceCache.find(i=>i.id===id);
+  if(!item){toast(t('emptyIm'));return;}
+  const secrets={encrypt_key:$('imWebhookEncrypt').value.trim(),verification_token:$('imWebhookToken').value.trim()};
+  const payload={instance:{id:item.id,channel:item.channel,name:item.name,enabled:true,options:item.options||{},acl:item.acl||{},project_scope:item.project_scope||'current',presenter:item.presenter||'off',status:item.status||'configured'},secrets,connect_after_save:true};
+  try{
+    const r=await fetch('/api/im/instances',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    const d=await r.json();
+    if(d.error){toast(t('errorPrefix')+d.error);return;}
+    $('imWebhookEncrypt').value='';$('imWebhookToken').value='';
+    toast(t('imWebhookSaved'));
+    await loadIMPane();
+  }catch(e){toast(t('errorPrefix')+String(e));}
 }
 async function deleteIMPaneInstance(id){
   if(!confirm('删除该 IM 实例？'))return;

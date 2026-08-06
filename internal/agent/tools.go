@@ -27,6 +27,18 @@ type ToolExecutor struct {
 	Manager            *llm.Manager
 	Activity           *ActivityTracker
 	OrchestrationDepth int
+	// PlanMode 规划模式下为 true：禁止修改代码、派生子 Agent、调用 MCP；
+	// 仅允许 write_file 创建文档类文件（.md/.txt 等）以及只读工具。
+	PlanMode bool
+}
+
+// isDocPath 判断路径是否为文档类文件（规划模式下允许创建）。
+func isDocPath(p string) bool {
+	switch strings.ToLower(filepath.Ext(p)) {
+	case ".md", ".markdown", ".txt", ".rst", ".adoc", ".org":
+		return true
+	}
+	return false
 }
 
 // ValidateWorkspace checks that path is an existing directory and returns its absolute form.
@@ -68,13 +80,19 @@ func (e *ToolExecutor) Definitions() []llm.Tool {
 		})}},
 	}
 	if e.MCP != nil {
-		tools = append(tools, e.MCP.Definitions()...)
+		// 规划模式下不暴露外部 MCP 工具，避免任何外部副作用。
+		if !e.PlanMode {
+			tools = append(tools, e.MCP.Definitions()...)
+		}
 	}
 	if len(e.Agents) > 0 && e.Manager != nil {
-		tools = append(tools, llm.Tool{Type: "function", Function: llm.FunctionDefinition{Name: "spawn_subagent", Description: "委派一个专门的子 Agent 完成独立任务并返回结果。", Parameters: objectSchema(map[string]any{
-			"agent": map[string]any{"type": "string", "description": "Agent 名称"},
-			"task":  map[string]any{"type": "string", "description": "交给子 Agent 的清晰任务"},
-		})}})
+		// 规划模式下禁止派生子 Agent（子 Agent 可能自行改代码）。
+		if !e.PlanMode {
+			tools = append(tools, llm.Tool{Type: "function", Function: llm.FunctionDefinition{Name: "spawn_subagent", Description: "委派一个专门的子 Agent 完成独立任务并返回结果。", Parameters: objectSchema(map[string]any{
+				"agent": map[string]any{"type": "string", "description": "Agent 名称"},
+				"task":  map[string]any{"type": "string", "description": "交给子 Agent 的清晰任务"},
+			})}})
+		}
 	}
 	return tools
 }
@@ -106,6 +124,9 @@ func (e *ToolExecutor) ExecuteContext(ctx context.Context, name, raw string) (st
 	}
 	switch name {
 	case "spawn_subagent":
+		if e.PlanMode {
+			return "", fmt.Errorf("当前为 Plan 规划模式，禁止派生子 Agent；如需执行请切换到 Execute 模式（/execute）")
+		}
 		var input struct {
 			Agent string `json:"agent"`
 			Task  string `json:"task"`
@@ -123,6 +144,12 @@ func (e *ToolExecutor) ExecuteContext(ctx context.Context, name, raw string) (st
 	case "write_file":
 		path, _ := args["path"].(string)
 		content, _ := args["content"].(string)
+		if e.PlanMode {
+			// 规划模式：仅允许创建文档类文件，禁止修改代码。
+			if !isDocPath(path) {
+				return "", fmt.Errorf("当前为 Plan 规划模式，不能修改代码文件 %q；只能创建文档（.md/.txt 等）。执行改动请切换到 Execute 模式（/execute）", filepath.ToSlash(path))
+			}
+		}
 		return e.write(path, content)
 	case "preview_file":
 		path, _ := args["path"].(string)
@@ -137,6 +164,9 @@ func (e *ToolExecutor) ExecuteContext(ctx context.Context, name, raw string) (st
 		return "", fmt.Errorf("技能 %q 不存在", name)
 	default:
 		if e.MCP != nil && strings.HasPrefix(name, "mcp_") {
+			if e.PlanMode {
+				return "", fmt.Errorf("当前为 Plan 规划模式，禁止调用外部 MCP 工具；如需执行请切换到 Execute 模式（/execute）")
+			}
 			return e.MCP.Execute(ctx, name, raw)
 		}
 		return "", fmt.Errorf("未知工具 %q", name)

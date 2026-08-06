@@ -1,0 +1,813 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>飞书 IM 接入实现复盘 · LongCat-frontend</title>
+<style>
+:root{
+  --bg:#f6f7f9; --surface:#ffffff; --surface2:#fbfcfd; --border:#e4e7ec;
+  --text:#16191f; --muted:#68707d; --accent:#2563eb; --accent-soft:#eff4ff;
+  --ok:#15803d; --ok-soft:#eaf6ee; --warn:#b45309; --warn-soft:#fdf5e7; --err:#c2261f; --err-soft:#fdeeed;
+  --code-bg:#f6f8fa; --code-border:#e6e9ee;
+  --k:#c0341d; --s:#0a5b8a; --c:#7b8493; --fn:#6f42c1; --num:#986801;
+  --shadow:0 1px 2px rgba(16,24,40,.04), 0 4px 16px rgba(16,24,40,.05);
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#0e1116; --surface:#161a21; --surface2:#1b2029; --border:#272d38;
+    --text:#e5e8ee; --muted:#98a1b0; --accent:#6ea8ff; --accent-soft:#16233a;
+    --ok:#68d391; --ok-soft:#15271d; --warn:#e3b341; --warn-soft:#2a2216; --err:#ff7b72; --err-soft:#2c1a19;
+    --code-bg:#11151b; --code-border:#242a34;
+    --k:#ff7b72; --s:#a5d6ff; --c:#8b949e; --fn:#d2a8ff; --num:#f2cc60;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 4px 18px rgba(0,0,0,.25);
+  }
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0; background:var(--bg); color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  font-size:15px; line-height:1.75; -webkit-font-smoothing:antialiased;
+}
+code,pre,.mono{font-family:ui-monospace,SFMono-Regular,"SF Mono",Consolas,"Liberation Mono",Menlo,monospace}
+
+/* ---------- layout ---------- */
+.wrap{max-width:1180px;margin:0 auto;padding:0 24px 96px;display:grid;grid-template-columns:212px minmax(0,1fr);gap:44px}
+@media(max-width:900px){.wrap{grid-template-columns:1fr;gap:0}.toc{display:none}}
+
+header.hero{border-bottom:1px solid var(--border);background:var(--surface);margin-bottom:40px}
+.hero-in{max-width:1180px;margin:0 auto;padding:40px 24px 32px}
+.eyebrow{font-size:12.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);font-weight:600;margin-bottom:10px}
+h1{margin:0 0 12px;font-size:31px;line-height:1.3;letter-spacing:-.02em;font-weight:700}
+.sub{color:var(--muted);font-size:15.5px;max-width:780px;margin:0}
+.badges{display:flex;flex-wrap:wrap;gap:8px;margin-top:20px}
+.badge{font-size:12.5px;padding:4px 11px;border-radius:999px;border:1px solid var(--border);background:var(--surface2);color:var(--muted);font-weight:500}
+.badge.ok{background:var(--ok-soft);color:var(--ok);border-color:transparent;font-weight:600}
+.badge.ac{background:var(--accent-soft);color:var(--accent);border-color:transparent}
+
+/* ---------- toc ---------- */
+.toc{position:sticky;top:28px;align-self:start;max-height:calc(100vh - 56px);overflow:auto;padding-top:4px}
+.toc-t{font-size:11.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);font-weight:700;margin-bottom:12px}
+.toc a{display:block;padding:6px 0 6px 12px;color:var(--muted);text-decoration:none;font-size:13.5px;border-left:2px solid var(--border);transition:.15s}
+.toc a:hover{color:var(--text);border-left-color:var(--accent)}
+
+/* ---------- sections ---------- */
+section{margin-bottom:52px;scroll-margin-top:24px}
+h2{font-size:21px;font-weight:700;letter-spacing:-.01em;margin:0 0 6px;display:flex;align-items:center;gap:11px}
+.h2n{flex:none;width:26px;height:26px;border-radius:7px;background:var(--accent-soft);color:var(--accent);font-size:13px;font-weight:700;display:grid;place-items:center;font-family:ui-monospace,monospace}
+.lead{color:var(--muted);margin:0 0 20px;font-size:14.5px}
+h3{font-size:16px;font-weight:650;margin:26px 0 10px}
+p{margin:0 0 14px}
+ul,ol{margin:0 0 14px;padding-left:22px}
+li{margin-bottom:7px}
+strong{font-weight:650}
+a{color:var(--accent)}
+.ic{background:var(--code-bg);border:1px solid var(--code-border);border-radius:5px;padding:1.5px 6px;font-size:12.8px;color:var(--text)}
+
+/* ---------- card ---------- */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px 22px;margin-bottom:16px;box-shadow:var(--shadow)}
+.card.tight{padding:16px 18px}
+
+/* ---------- code ---------- */
+.codebox{border:1px solid var(--code-border);border-radius:10px;overflow:hidden;margin:14px 0 18px;background:var(--code-bg)}
+.codehead{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 14px;background:var(--surface2);border-bottom:1px solid var(--code-border);font-size:12.5px}
+.codehead .f{font-family:ui-monospace,monospace;color:var(--muted);font-weight:600}
+.codehead .tag{font-size:11px;padding:2px 8px;border-radius:5px;background:var(--accent-soft);color:var(--accent);font-weight:600}
+.codehead .tag.new{background:var(--ok-soft);color:var(--ok)}
+.codehead .tag.fix{background:var(--err-soft);color:var(--err)}
+pre{margin:0;padding:15px 16px;overflow-x:auto;font-size:12.9px;line-height:1.68}
+pre .k{color:var(--k)} pre .s{color:var(--s)} pre .c{color:var(--c);font-style:italic}
+pre .fn{color:var(--fn)} pre .n{color:var(--num)}
+pre .hl{background:var(--warn-soft);display:inline-block;width:100%;border-radius:3px}
+
+/* ---------- pipeline ---------- */
+.pipe{list-style:none;padding:0;margin:18px 0 6px;position:relative}
+.pipe:before{content:"";position:absolute;left:15px;top:14px;bottom:14px;width:2px;background:var(--border)}
+.pipe li{position:relative;padding:0 0 18px 46px;margin:0}
+.pipe .dot{position:absolute;left:6px;top:2px;width:20px;height:20px;border-radius:50%;background:var(--surface);border:2px solid var(--border);display:grid;place-items:center;font-size:10.5px;font-weight:700;color:var(--muted);font-family:ui-monospace,monospace}
+.pipe li.acc .dot{border-color:var(--accent);color:var(--accent)}
+.pipe li.bug .dot{border-color:var(--err);color:var(--err);background:var(--err-soft)}
+.pipe .t{font-weight:650;font-size:14.5px;margin-bottom:2px}
+.pipe .d{color:var(--muted);font-size:13.5px;line-height:1.65}
+.pipe .d code{font-size:12.4px;background:var(--code-bg);border:1px solid var(--code-border);border-radius:4px;padding:1px 5px}
+.bugflag{display:inline-block;margin-left:8px;font-size:11px;font-weight:700;color:var(--err);background:var(--err-soft);padding:1.5px 7px;border-radius:5px;vertical-align:1.5px}
+
+/* ---------- table ---------- */
+.tbl{width:100%;border-collapse:collapse;font-size:13.8px;margin:14px 0 18px;background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden}
+.tbl th{text-align:left;padding:11px 14px;background:var(--surface2);font-weight:650;font-size:12.5px;color:var(--muted);border-bottom:1px solid var(--border)}
+.tbl td{padding:11px 14px;border-bottom:1px solid var(--border);vertical-align:top}
+.tbl tr:last-child td{border-bottom:none}
+.yes{color:var(--ok);font-weight:650}
+.no{color:var(--err);font-weight:650}
+
+/* ---------- problem ---------- */
+.prob{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--err);border-radius:10px;padding:18px 20px;margin-bottom:14px;box-shadow:var(--shadow)}
+.prob.minor{border-left-color:var(--warn)}
+.prob.open{border-left-color:var(--muted)}
+.prob-h{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.prob-n{font-family:ui-monospace,monospace;font-size:11.5px;font-weight:700;color:var(--muted);background:var(--surface2);border:1px solid var(--border);padding:2px 7px;border-radius:5px}
+.prob-t{font-weight:680;font-size:15.5px}
+.sev{font-size:11px;font-weight:700;padding:2px 8px;border-radius:5px;background:var(--err-soft);color:var(--err)}
+.sev.m{background:var(--warn-soft);color:var(--warn)}
+.sev.o{background:var(--surface2);color:var(--muted);border:1px solid var(--border)}
+.kv{display:grid;grid-template-columns:74px minmax(0,1fr);gap:6px 14px;font-size:14px}
+.kv dt{color:var(--muted);font-size:12.5px;font-weight:650;padding-top:2px}
+.kv dd{margin:0}
+.kv code{background:var(--code-bg);border:1px solid var(--code-border);border-radius:4px;padding:1px 5px;font-size:12.5px}
+
+/* ---------- callout ---------- */
+.call{border-radius:10px;padding:14px 17px;margin:16px 0;font-size:14px;border:1px solid transparent}
+.call.tip{background:var(--accent-soft);border-color:transparent;color:var(--text)}
+.call.warn{background:var(--warn-soft);color:var(--text)}
+.call.ok{background:var(--ok-soft);color:var(--text)}
+.call .ct{font-weight:700;font-size:13px;margin-bottom:5px;display:block}
+.call.tip .ct{color:var(--accent)} .call.warn .ct{color:var(--warn)} .call.ok .ct{color:var(--ok)}
+.call p:last-child{margin-bottom:0}
+
+/* ---------- misc ---------- */
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:700px){.grid2{grid-template-columns:1fr}}
+.mini{font-size:12.5px;color:var(--muted);margin-top:-6px;margin-bottom:16px}
+.chk{list-style:none;padding:0}
+.chk li{padding-left:26px;position:relative}
+.chk li:before{content:"✓";position:absolute;left:4px;color:var(--ok);font-weight:700}
+.chk li.x:before{content:"○";color:var(--muted)}
+footer{max-width:1180px;margin:0 auto;padding:26px 24px 0;border-top:1px solid var(--border);color:var(--muted);font-size:13px}
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="hero-in">
+    <div class="eyebrow">LongCat-frontend · 实现复盘</div>
+    <h1>飞书 IM 接入：Addons 自动订阅 + WebSocket 长连接</h1>
+    <p class="sub">在桌面端扫一个码，就能在飞书里直接和 Agent 对话——不需要公网回调地址、不需要去开放平台手动配事件订阅和权限。本文记录完整实现路径、8 个踩过的坑，以及那个让「状态显示接收中却永远不回话」的核心 bug。</p>
+    <div class="badges">
+      <span class="badge ok">✓ 已跑通</span>
+      <span class="badge">2026-08-06</span>
+      <span class="badge ac">Go 1.26.1</span>
+      <span class="badge ac">oapi-sdk-go/v3 v3.9.10</span>
+      <span class="badge ac">Tauri 2.11.4</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+  <nav class="toc">
+    <div class="toc-t">目录</div>
+    <a href="#goal">1 · 目标与结论</a>
+    <a href="#why">2 · 为什么不用 Webhook</a>
+    <a href="#arch">3 · 整体架构</a>
+    <a href="#impl1">4 · 实现①：Addons</a>
+    <a href="#impl2">5 · 实现②：长连接</a>
+    <a href="#impl3">6 · 实现③：生命周期</a>
+    <a href="#bug">7 · 核心 Bug 剖析</a>
+    <a href="#problems">8 · 问题全清单</a>
+    <a href="#verify">9 · 验证与测试</a>
+    <a href="#files">10 · 改动文件</a>
+    <a href="#todo">11 · 遗留事项</a>
+  </nav>
+
+  <main>
+
+  <!-- 1 -->
+  <section id="goal">
+    <h2><span class="h2n">1</span>目标与结论</h2>
+    <p class="lead">要做成什么，以及最后做成了什么。</p>
+
+    <div class="card">
+      <h3 style="margin-top:0">目标</h3>
+      <p>让用户在桌面端 IM 面板点「扫码创建」，用飞书 App 扫码授权后，<strong>立刻</strong>就能在飞书里私聊/群聊这个 bot，消息交给本地 Agent 处理并把回复发回飞书。全程<strong>零手工配置</strong>：不填回调 URL、不填 <span class="ic">encrypt_key</span>、不去开放平台后台点事件订阅。</p>
+
+      <h3>结论</h3>
+      <p>做成了，靠两件事的组合：</p>
+      <ul>
+        <li><strong>Addons</strong>——把想要的权限和事件<strong>编码进二维码 URL</strong>，用户扫码创建应用的那一刻，开放平台就自动授予 <span class="ic">im:message</span> 权限并订阅 <span class="ic">im.message.receive_v1</span> 事件。</li>
+        <li><strong>WebSocket 长连接</strong>——事件由开放平台<strong>主动推到本地建立的这条连接</strong>上，因此本机不需要公网可达，也就不需要回调地址和验签。</li>
+      </ul>
+      <div class="call ok"><span class="ct">最终状态</span>
+        <p>桌面端 IM 面板显示 <strong>「已配置 · 运行中 · 接收中 · WebSocket 长连接」</strong>，飞书私聊发消息 Agent 正常回复。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2 -->
+  <section id="why">
+    <h2><span class="h2n">2</span>为什么不用 Webhook：一次关键的方向修正</h2>
+    <p class="lead">最初的实现走的是 HTTP 回调，卡死在了「本地机器没有公网 IP」这个物理事实上。</p>
+
+    <div class="card">
+      <p>第一版数据面是标准的 webhook 方案：起一个 <span class="ic">/api/im/webhook/{id}</span> 路由，做 AES 解密 + <span class="ic">verification_token</span> 校验，等飞书把事件 POST 过来。代码全部写完、单测全过，但<strong>真机永远收不到消息</strong>——因为飞书开放平台需要一个<strong>公网可达的 HTTPS 地址</strong>才能推送事件，而用户的桌面端跑在 <span class="ic">127.0.0.1</span> 上。这是架构问题，不是 bug，改代码解决不了。</p>
+
+      <p>转机来自对参考实现 grok-app 的逆向确认。原本以为它靠 Addons 实现「扫码即通话」，但在它的 <span class="ic">remote-bridge/src</span> 里全文搜索 <span class="ic">addons</span> <strong>零命中</strong>。真正起作用的是这一句：</p>
+
+      <div class="codebox">
+        <div class="codehead"><span class="f">grok-app / remote-bridge（参考实现）</span><span class="tag">TypeScript</span></div>
+        <pre><code class="go">lark.createLarkChannel({ appId, appSecret }).connect()  // ← WebSocket 长连接，不是 webhook</code></pre>
+      </div>
+
+      <p>于是方案从「Addons <em>替代</em> webhook」修正为 <strong>「长连接负责收消息 + Addons 负责免手工配置」</strong>——两者解决的是不同问题，组合起来才是完整答案。</p>
+
+      <table class="tbl">
+        <thead><tr><th style="width:24%">维度</th><th style="width:38%">HTTP Webhook</th><th style="width:38%">WebSocket 长连接</th></tr></thead>
+        <tbody>
+          <tr><td>公网可达</td><td class="no">必须（本地开发的死穴）</td><td class="yes">不需要，客户端主动外连</td></tr>
+          <tr><td>回调地址</td><td>要在开放平台填并通过 challenge 校验</td><td class="yes">无</td></tr>
+          <tr><td>加解密</td><td>需 <span class="ic">encrypt_key</span> AES 解密 + token 验签</td><td class="yes">连接层已鉴权，<span class="ic">NewEventDispatcher("","")</span></td></tr>
+          <tr><td>断线重连</td><td>不适用（被动）</td><td>SDK 内部自动处理</td></tr>
+          <tr><td>适合场景</td><td>有固定公网入口的服务端</td><td class="yes">桌面端 / 内网 / 本地 Agent</td></tr>
+        </tbody>
+      </table>
+
+      <div class="call tip"><span class="ct">经验</span>
+        <p>参考实现要看它<strong>实际调了什么</strong>，不要从功能名反推机制。这次如果不去 grep 一遍源码，会在 Addons 上继续投入而完全不解决收不到消息的问题。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3 -->
+  <section id="arch">
+    <h2><span class="h2n">3</span>整体架构：从扫码到回复的完整链路</h2>
+    <p class="lead">分两个阶段。阶段一只发生一次（创建），阶段二是每条消息都会走的运行时管线。</p>
+
+    <div class="card">
+      <h3 style="margin-top:0">阶段一 · 扫码创建（一次性）</h3>
+      <ul class="pipe">
+        <li class="acc"><span class="dot">1</span>
+          <div class="t">前端点「扫码创建」</div>
+          <div class="d">桌面端 IM 面板发起扫码请求，后端进入 <code>scanFeishuBegin</code>。</div>
+        </li>
+        <li><span class="dot">2</span>
+          <div class="t">拿到 OAuth 设备码</div>
+          <div class="d">调飞书 device_code 接口，取回 <code>device_code</code> 与 <code>verification_uri_complete</code>（即二维码要编码的原始 URL）。</div>
+        </li>
+        <li class="acc"><span class="dot">3</span>
+          <div class="t">挂载 Addons ★ 关键</div>
+          <div class="d">把「要 <code>im:message</code> 权限 + 订阅 <code>im.message.receive_v1</code> 事件」这份声明 <code>gzip</code> 后 <code>base64url</code> 编码，作为 <code>?addons=</code> 拼到 URL 上，再附 <code>from=sdk&amp;tp=sdk</code>。</div>
+        </li>
+        <li><span class="dot">4</span>
+          <div class="t">生成二维码，用户扫码 + App 内确认授权</div>
+          <div class="d">仅扫描不够，必须在飞书 App 里点确认，否则一直停在「等待扫码确认」。</div>
+        </li>
+        <li class="acc"><span class="dot">5</span>
+          <div class="t">开放平台按 Addons 自动配置应用</div>
+          <div class="d">创建应用的同时授予权限、订阅事件——这一步替代了原本要人工去后台点的所有配置。</div>
+        </li>
+        <li><span class="dot">6</span>
+          <div class="t">轮询取回 <code>app_id</code> / <code>app_secret</code> → 自动启动</div>
+          <div class="d">前端以 <code>enabled:true</code> + <code>connect_after_save:true</code> 保存实例，<code>SaveInstance</code> 检测到后直接调 <code>Start()</code>，<strong>用户无需再点「启用接收」</strong>。</div>
+        </li>
+      </ul>
+
+      <h3>阶段二 · 运行时消息管线（每条消息）</h3>
+      <ul class="pipe">
+        <li class="acc"><span class="dot">1</span>
+          <div class="t">飞书开放平台 ⇄ <code>larkws.Client</code></div>
+          <div class="d">长连接由 SDK 维护，含握手、心跳、自动重连；应用层只注册事件处理器。</div>
+        </li>
+        <li><span class="dot">2</span>
+          <div class="t"><code>dispatcher.OnP2MessageReceiveV1</code> 回调触发</div>
+          <div class="d">收到 <code>im.message.receive_v1</code> 事件。</div>
+        </li>
+        <li class="bug"><span class="dot">3</span>
+          <div class="t">归一化为 <code>IncomingMessage</code><span class="bugflag">核心 Bug 曾发生在这一步</span></div>
+          <div class="d"><code>feishuEventToIncoming</code> 提取文本、去掉 @ 占位符、忽略 bot 自身消息防回环，<strong>并写入 <code>InstanceID</code></strong>——最初漏了这个字段，导致后面每一步都查不到东西。</div>
+        </li>
+        <li><span class="dot">4</span>
+          <div class="t"><code>Bridge.Deliver</code> → 带缓冲的 inbox channel</div>
+          <div class="d">投递失败（队列满/未启用）只忽略错误，不阻断长连接循环，也不让 SDK 误判为处理失败而重推。</div>
+        </li>
+        <li><span class="dot">5</span>
+          <div class="t">单条 dispatcher goroutine 串行消费 → <code>handleMessage</code></div>
+          <div class="d">用 <code>b.instances[msg.InstanceID]</code> 查实例、<code>b.transports[msg.InstanceID]</code> 查回复客户端。</div>
+        </li>
+        <li><span class="dot">6</span>
+          <div class="t">ACL 过滤 → 控制指令 → 交给 Agent</div>
+          <div class="d">默认全放行（私聊任意消息都触发）；<code>/help</code> <code>/whoami</code> <code>/new</code> <code>/stop</code> 直接短路处理；其余进入隔离会话，不污染桌面端主对话。</div>
+        </li>
+        <li class="acc"><span class="dot">7</span>
+          <div class="t"><code>transport.ReplyText</code> 把回复发回飞书</div>
+          <div class="d">20s 超时；失败时把错误写进实例的 <code>LastError</code>，前端面板可见。</div>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- 4 -->
+  <section id="impl1">
+    <h2><span class="h2n">4</span>实现① · Addons：把配置编码进二维码</h2>
+    <p class="lead">飞书官方 SDK 有这个能力但没有公开文档，编码格式是从官方 Go SDK 源码里逆向出来的。</p>
+
+    <div class="card">
+      <p>官方实现位于 <span class="ic">scene/registration/addons.go</span> 的 <span class="ic">encodeAddons</span>，格式为 <strong><span class="ic">base64.RawURLEncoding(gzip(JSON))</span></strong>。注意是 <strong>Raw</strong>URLEncoding（无 <span class="ic">=</span> 填充），用错会被开放平台拒绝挂载。</p>
+
+      <div class="codebox">
+        <div class="codehead"><span class="f">internal/im/qr.go</span><span class="tag new">新增</span></div>
+        <pre><code class="go">// defaultFeishuAddons 返回扫码时希望开放平台自动配置的权限与事件。
+//   - scopes: 申请 im:message（收发消息）权限；
+//   - events: 订阅 im.message.receive_v1 接收消息事件。
+//
+// 长连接接收不需要 HTTP 回调地址，因此 callbacks 留空。结构需与飞书官方
+// SDK（scene/registration/addons.go）一致，否则开放平台会拒绝挂载。
+func defaultFeishuAddons() map[string]any {
+	return map[string]any{
+		"scopes": map[string][]string{
+			"tenant": {"im:message"},
+		},
+		"events": map[string]any{
+			"items": map[string][]string{
+				"tenant": {"im.message.receive_v1"},
+			},
+		},
+	}
+}
+
+// feishuAddonsEncode 把 Addons 结构 gzip 压缩后用 base64url 编码，
+// 与飞书官方 SDK（encodeAddons）的编码方式一致：base64.RawURLEncoding(gzip(JSON))。
+func feishuAddonsEncode(addons map[string]any) (string, error) {
+	body, err := json.Marshal(addons)
+	if err != nil {
+		return "", fmt.Errorf("marshal addons: %w", err)
+	}
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&amp;buf)
+	if _, err := gz.Write(body); err != nil {
+		_ = gz.Close()
+		return "", fmt.Errorf("gzip addons: %w", err)
+	}
+	if err := gz.Close(); err != nil {   // 必须 Close 才会 flush 出完整 gzip 尾部
+		return "", fmt.Errorf("gzip addons close: %w", err)
+	}
+	return base64.RawURLEncoding.EncodeToString(buf.Bytes()), nil
+}</code></pre>
+      </div>
+
+      <p>挂载点在拿到 OAuth 返回、生成二维码图像<strong>之前</strong>：</p>
+
+      <div class="codebox">
+        <div class="codehead"><span class="f">internal/im/qr.go · scanFeishuBegin</span><span class="tag">改动</span></div>
+        <pre><code class="go">rawURI, _ := data["verification_uri_complete"].(string)
+// 在二维码 URL 上挂载 Addons：用户扫码创建机器人时，开放平台会据此自动
+// 订阅 im.message.receive_v1 事件并申请 im:message 权限，省去手动到
+// 「事件与回调」里填事件订阅与权限的步骤。长连接接收模式下不需要回调地址，
+// 因此 callbacks 留空（事件通过 WebSocket 长连接直接推送，无需公网可达）。
+addons, aerr := feishuAddonsEncode(defaultFeishuAddons())
+if aerr != nil {
+	return ScanBeginResult{}, fmt.Errorf("构造飞书 Addons 失败: %w", aerr)
+}
+rawURI = appendQueryParam(rawURI, "addons", addons)
+rawURI = appendQueryParam(rawURI, "from", "sdk")
+rawURI = appendQueryParam(rawURI, "tp", "sdk")
+image, err := qrDataURL(rawURI)</code></pre>
+      </div>
+
+      <div class="call tip"><span class="ct">为什么 callbacks 留空</span>
+        <p>Addons 结构支持声明 callbacks（回调地址），但长连接模式下事件直接推到 WS 连接，不走 HTTP 回调，填了反而会让开放平台去校验一个不可达的地址。这是「两个方案组合」时最容易搞混的一点。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5 -->
+  <section id="impl2">
+    <h2><span class="h2n">5</span>实现② · WebSocket 长连接接收</h2>
+    <p class="lead">新增 <span class="ic">internal/im/feishu_ws.go</span>，约 120 行。SDK 把脏活都干了，应用层只需注册处理器 + 做消息归一化。</p>
+
+    <div class="card">
+      <div class="codebox">
+        <div class="codehead"><span class="f">internal/im/feishu_ws.go</span><span class="tag new">新文件</span></div>
+        <pre><code class="go">// feishuLongConn 持有单个飞书/Lark 实例的 WebSocket 长连接，用于接收
+// im.message.receive_v1 事件。与 webhook 方式不同，长连接不需要公网回调地址、
+// encrypt_key 或 verification_token —— 事件由开放平台直接推送到这条连接上，
+// 因此本地运行也能正常收发（这正是 grok-app 的「扫码即通话」实现方式）。
+type feishuLongConn struct {
+	client     *larkws.Client
+	channel    RemoteChannelID
+	instanceID string
+}
+
+func newFeishuLongConn(instanceID string, channel RemoteChannelID, appID, appSecret string,
+	deliver func(context.Context, IncomingMessage) error) (*feishuLongConn, error) {
+
+	eventHandler := dispatcher.NewEventDispatcher("", "") // 长连接由飞书侧鉴权，无需验签
+	eventHandler.OnP2MessageReceiveV1(func(ctx context.Context, event *larkim.P2MessageReceiveV1) error {
+		if msg := feishuEventToIncoming(channel, instanceID, event); msg != nil {
+			// 投递失败（队列满/未启用）不应让 SDK 把事件当作处理失败而重推，
+			// 这里忽略错误，仅保证不阻断长连接循环。
+			_ = deliver(ctx, *msg)
+		}
+		return nil
+	})
+
+	domain := feishuOpenBase(channel) // https://open.feishu.cn 或 https://open.larksuite.com
+	client := larkws.NewClient(appID, appSecret,
+		larkws.WithDomain(domain),
+		larkws.WithEventHandler(eventHandler),
+		larkws.WithLogLevel(larkcore.LogLevelError),
+	)
+	return &amp;feishuLongConn{client: client, channel: channel, instanceID: instanceID}, nil
+}
+
+// run 会阻塞（SDK 内部的连接循环，自动重连），调用方应在独立 goroutine 中执行。
+func (c *feishuLongConn) run(ctx context.Context) { _ = c.client.Start(ctx) }
+
+// Close 关闭长连接并停止重连。
+func (c *feishuLongConn) Close() { c.client.Close() }</code></pre>
+      </div>
+
+      <p>归一化函数把 SDK 的事件结构翻译成项目内中立的 <span class="ic">IncomingMessage</span>，<strong>复用</strong>了 webhook 路径已有的 <span class="ic">feishuMessageText</span> / <span class="ic">stripFeishuMentions</span>，保证两条路径解析结果一致：</p>
+
+      <div class="codebox">
+        <div class="codehead"><span class="f">internal/im/feishu_ws.go · feishuEventToIncoming</span><span class="tag new">新文件</span></div>
+        <pre><code class="go">func feishuEventToIncoming(channel RemoteChannelID, instanceID string,
+	event *larkim.P2MessageReceiveV1) *IncomingMessage {
+
+	if event == nil || event.Event == nil {
+		return nil
+	}
+	data := event.Event
+	if data.Sender != nil &amp;&amp; data.Sender.SenderType != nil {
+		st := *data.Sender.SenderType
+		if st == "bot" || st == "app" {
+			return nil // 忽略机器人/应用自身消息，避免回环
+		}
+	}
+	if data.Message == nil {
+		return nil
+	}
+	msg := data.Message
+	text := feishuMessageText(derefString(msg.MessageType), derefString(msg.Content))
+	var mentions []feishuMention
+	for _, m := range msg.Mentions {
+		if m != nil {
+			mentions = append(mentions, feishuMention{Key: derefString(m.Key)})
+		}
+	}
+	text = strings.TrimSpace(stripFeishuMentions(text, mentions))
+	if text == "" {
+		return nil // 图片/文件等非文本消息直接跳过
+	}
+	chatType := derefString(msg.ChatType)
+	if chatType == "" {
+		chatType = "p2p"
+	}
+	userID := ""
+	if data.Sender != nil &amp;&amp; data.Sender.SenderId != nil {
+		userID = derefString(data.Sender.SenderId.OpenId)
+		if userID == "" {
+			userID = derefString(data.Sender.SenderId.UserId)
+		}
+	}
+	return &amp;IncomingMessage{
+		InstanceID: instanceID,   // ★ 缺这一行 = bot 永远不回话，详见第 7 节
+		Channel:    channel,
+		UserID:     userID,
+		ChatID:     derefString(msg.ChatId),
+		ChatType:   chatType,
+		MessageID:  derefString(msg.MessageId),
+		Text:       text,
+		Mentioned:  len(msg.Mentions) &gt; 0,
+	}
+}</code></pre>
+      </div>
+
+      <div class="call tip"><span class="ct">SDK 全是指针字段</span>
+        <p><span class="ic">oapi-sdk-go</span> 的事件模型每个字段都是 <span class="ic">*string</span>，直接解引用会 panic。统一加了个 <span class="ic">derefString(s *string) string</span> helper，nil 返回空串。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6 -->
+  <section id="impl3">
+    <h2><span class="h2n">6</span>实现③ · 接进 Bridge 生命周期</h2>
+    <p class="lead">长连接要跟着实例的启停走，不能泄漏 goroutine 或连接。</p>
+
+    <div class="card">
+      <p><span class="ic">Bridge</span> 新增两个字段：<span class="ic">longConns map[string]*feishuLongConn</span> 和测试开关 <span class="ic">disableLongConn bool</span>。</p>
+
+      <div class="codebox">
+        <div class="codehead"><span class="f">internal/im/runtime.go · Start()</span><span class="tag">改动</span></div>
+        <pre><code class="go">b.transports = map[string]*feishuClient{}
+b.longConns = map[string]*feishuLongConn{}
+// ...
+		b.transports[id] = client
+		// 长连接收消息：扫码时已通过 Addons 自动订阅 im.message.receive_v1，
+		// 这里建立 WebSocket 长连接即可接收，无需公网回调地址。
+		lc, lcErr := newFeishuLongConn(id, instance.Channel, appID, appSecret, b.Deliver)
+		if lcErr != nil {
+			instance.LastError = "长连接建立失败: " + lcErr.Error()
+			b.instances[id] = instance
+			continue
+		}
+		b.longConns[id] = lc
+		if !b.disableLongConn {   // 单测里置 true，避免真连外网
+			go lc.run(ctx)
+		}
+		instance.LastError = ""
+		b.instances[id] = instance
+		ready++</code></pre>
+      </div>
+
+      <div class="codebox">
+        <div class="codehead"><span class="f">internal/im/runtime.go · Stop()</span><span class="tag">改动</span></div>
+        <pre><code class="go">for id, lc := range b.longConns {
+	lc.Close()
+	delete(b.longConns, id)
+}
+b.transports = map[string]*feishuClient{}</code></pre>
+      </div>
+
+      <p>另外几处配套调整：</p>
+      <ul>
+        <li><span class="ic">Status()</span> / <span class="ic">ListInstances()</span> / <span class="ic">Doctor()</span> 的「是否在接收」判据从 <span class="ic">b.transports</span> 改为 <span class="ic">b.longConns</span>——因为 <span class="ic">transports</span> 只是发送客户端，有它不代表在收。</li>
+        <li>新增传输类型常量 <span class="ic">TransportLongConn = "longconn"</span>，与原有 <span class="ic">TransportWebhook</span> 并存（webhook 路径保留，作为可选项）。</li>
+        <li>前端面板展示传输方式：<span class="ic">bridge.transport==='longconn' ? 'WebSocket 长连接' : 'HTTP 回调'</span>，状态行变成「接收中 · WebSocket 长连接」。</li>
+        <li>webhook 卡片文案改为「接收方式：WebSocket 长连接（默认）」，说明扫码即自动订阅、HTTP 回调为可选。</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- 7 -->
+  <section id="bug">
+    <h2><span class="h2n">7</span>核心 Bug 剖析：显示「接收中」却永远不回话</h2>
+    <p class="lead">这是整个过程中最难定位的问题——因为它<strong>不报任何错</strong>。</p>
+
+    <div class="card">
+      <h3 style="margin-top:0">症状</h3>
+      <p>扫码创建成功，面板显示 <strong>「feishu · 已配置 · 运行中 · 接收中」</strong>，<span class="ic">last_error</span> 为空。但在飞书里给 bot 发消息，<strong>没有任何反应</strong>：不回复、不报错、日志里也没有异常。</p>
+
+      <h3>排查思路</h3>
+      <p>「接收中」这个状态是由 <span class="ic">b.longConns[id]</span> 存在推导出来的——它只能证明<strong>连接对象建好了</strong>，不能证明消息真的流到了终点。所以问题一定在「事件到达」和「发出回复」之间的某一环。顺着管线读代码，在 <span class="ic">handleMessage</span> 的第一段找到了答案：</p>
+
+      <div class="codebox">
+        <div class="codehead"><span class="f">internal/im/runtime.go:220 · handleMessage</span><span class="tag fix">Bug 现场</span></div>
+        <pre><code class="go">func (b *Bridge) handleMessage(ctx context.Context, msg IncomingMessage) {
+	b.mu.Lock()
+	instance, ok := b.instances[msg.InstanceID]    // ← InstanceID 为 ""，查不到
+	handler := b.handler
+	transport := b.transports[msg.InstanceID]      // ← 同样查不到，为 nil
+	b.mu.Unlock()
+	if !ok || handler == nil || transport == nil {
+		return                                     // ← 静默 return！不报错、不记日志
+	}
+	// ...</code></pre>
+      </div>
+
+      <h3>根因</h3>
+      <p>长连接路径产出的 <span class="ic">IncomingMessage</span> <strong>没有设置 <span class="ic">InstanceID</span></strong>。<span class="ic">feishuEventToIncoming</span> 只填了 <span class="ic">Channel</span> / <span class="ic">UserID</span> / <span class="ic">ChatID</span> / <span class="ic">Text</span> 等，唯独漏了归属字段。而 <span class="ic">handleMessage</span> 是<strong>按 InstanceID 查表</strong>拿实例和回复客户端的：空 ID → 两个 map 都命中不了 → 走进那个 <span class="ic">return</span> → 消息被无声吞掉。</p>
+
+      <p>为什么 webhook 路径没这个问题？因为它在 <span class="ic">HandleWebhook</span> 里显式补了一行 <span class="ic">msg.InstanceID = instanceID</span>（runtime.go:369）——ID 是从 URL 路径 <span class="ic">/api/im/webhook/{id}</span> 里天然带出来的。新写的长连接路径没有这个「天然来源」，就漏掉了。</p>
+
+      <div class="call warn"><span class="ct">这类 bug 为什么难查</span>
+        <p>三个因素叠加：① 失败是<strong>静默</strong>的，防御性 <span class="ic">return</span> 吃掉了所有信号；② 状态指示器（「接收中」）监控的是<strong>连接建立</strong>而非<strong>端到端连通</strong>，给了虚假的安全感；③ 新旧两条路径共用下游，但上游契约（谁负责填 InstanceID）没有被显式表达，只存在于某一条路径的实现里。</p>
+      </div>
+
+      <h3>修复</h3>
+      <p>把 <span class="ic">instanceID</span> 一路透传到归一化函数内部，让「产出的消息一定带归属」成为函数自身的职责，而不是靠调用方记得补：</p>
+
+      <div class="codebox">
+        <div class="codehead"><span class="f">修复要点（3 处）</span><span class="tag fix">Fix</span></div>
+        <pre><code class="go">// ① feishuLongConn 持有 instanceID
+type feishuLongConn struct {
+	client     *larkws.Client
+	channel    RemoteChannelID
+	instanceID string   // 新增
+}
+
+// ② 构造函数签名加上 instanceID，并传给归一化函数
+func newFeishuLongConn(instanceID string, channel RemoteChannelID, ...) {
+	eventHandler.OnP2MessageReceiveV1(func(ctx context.Context, event *larkim.P2MessageReceiveV1) error {
+		if msg := feishuEventToIncoming(channel, instanceID, event); msg != nil { ... }
+	})
+}
+
+// ③ 归一化时写入（而不是在回调里补写，便于单测锁定）
+return &amp;IncomingMessage{
+	InstanceID: instanceID,
+	...
+}
+
+// 调用处 runtime.go:87
+lc, lcErr := newFeishuLongConn(id, instance.Channel, appID, appSecret, b.Deliver)</code></pre>
+      </div>
+
+      <p>刻意<strong>没有</strong>选择在回调里 <span class="ic">msg.InstanceID = instanceID</span> 这种更省事的写法——放进 <span class="ic">feishuEventToIncoming</span> 内部才能被纯函数单测覆盖，从而写出回归测试锁死这个行为。</p>
+    </div>
+  </section>
+
+  <!-- 8 -->
+  <section id="problems">
+    <h2><span class="h2n">8</span>问题全清单</h2>
+    <p class="lead">按遇到的先后顺序，8 个问题及其解决方式。</p>
+
+    <div class="prob">
+      <div class="prob-h"><span class="prob-n">P1</span><span class="prob-t">扫码后一直卡在「等待扫码确认」</span><span class="sev">阻断</span></div>
+      <dl class="kv">
+        <dt>症状</dt><dd>手机扫了码，桌面端状态永远不前进。</dd>
+        <dt>根因</dt><dd>轮询逻辑把「已扫码」当成了终态，但飞书 OAuth 设备码流程要求用户<strong>在 App 内二次点击确认授权</strong>才会下发凭据。</dd>
+        <dt>解决</dt><dd>修正轮询状态机，并在 UI 上明确提示「请在飞书 App 中点击确认」。</dd>
+      </dl>
+    </div>
+
+    <div class="prob">
+      <div class="prob-h"><span class="prob-n">P2</span><span class="prob-t">Webhook 方案真机永远收不到消息</span><span class="sev">架构</span></div>
+      <dl class="kv">
+        <dt>症状</dt><dd>解密、验签、路由全部实现且单测通过，但飞书从不推送。</dd>
+        <dt>根因</dt><dd>桌面端跑在 <code>127.0.0.1</code>，开放平台需要公网可达的 HTTPS 回调地址。属于架构约束，非代码缺陷。</dd>
+        <dt>解决</dt><dd>整体切换到 <strong>WebSocket 长连接</strong>（客户端主动外连，无需公网入口）。webhook 代码保留为可选路径。</dd>
+      </dl>
+    </div>
+
+    <div class="prob minor">
+      <div class="prob-h"><span class="prob-n">P3</span><span class="prob-t">误以为 grok-app 用 Addons 实现「扫码即通话」</span><span class="sev m">方向</span></div>
+      <dl class="kv">
+        <dt>症状</dt><dd>照着「Addons」这个方向做，做完发现仍然收不到消息。</dd>
+        <dt>根因</dt><dd>在 <code>remote-bridge/src</code> 全文 grep <code>addons</code> <strong>零命中</strong>；它真正用的是 <code>createLarkChannel().connect()</code> 长连接。功能名和实现机制对不上。</dd>
+        <dt>解决</dt><dd>方案重新定位为「长连接收消息 + Addons 免手工配置」的<strong>组合</strong>，并向用户确认后执行。</dd>
+      </dl>
+    </div>
+
+    <div class="prob minor">
+      <div class="prob-h"><span class="prob-n">P4</span><span class="prob-t">Addons 编码格式无公开文档</span><span class="sev m">未知</span></div>
+      <dl class="kv">
+        <dt>症状</dt><dd>知道要传 <code>?addons=</code>，但不知道内容怎么编码。</dd>
+        <dt>根因</dt><dd>官方文档未覆盖，只存在于 SDK 源码。</dd>
+        <dt>解决</dt><dd>临时克隆 <code>larksuite/oapi-sdk-go</code> 到本地，读 <code>scene/registration/addons.go</code> 的 <code>encodeAddons</code>，确认为 <code>base64.RawURLEncoding(gzip(JSON))</code>，实现等价编码器并写<strong>往返测试</strong>验证（编码→解码→比对 JSON 结构）。实现完成后删除临时克隆，依赖走 Go module cache。</dd>
+      </dl>
+    </div>
+
+    <div class="prob minor">
+      <div class="prob-h"><span class="prob-n">P5</span><span class="prob-t">编译失败：go.sum 缺条目</span><span class="sev m">构建</span></div>
+      <dl class="kv">
+        <dt>症状</dt><dd><code>missing go.sum entry</code>：<code>gogo/protobuf</code>、<code>gorilla/websocket</code>（被 <code>ws</code> 包间接引入）。</dd>
+        <dt>根因</dt><dd><code>go get</code> 只写了直接依赖，WS 传输层的间接依赖未落 go.sum。</dd>
+        <dt>解决</dt><dd><code>go mod tidy</code> 补齐（gogo/protobuf v1.3.2、gorilla/websocket v1.5.0），<code>go build ./...</code> 通过。</dd>
+      </dl>
+    </div>
+
+    <div class="prob minor">
+      <div class="prob-h"><span class="prob-n">P6</span><span class="prob-t">单元测试真连外网 + 断言过时</span><span class="sev m">测试</span></div>
+      <dl class="kv">
+        <dt>症状</dt><dd><code>TestStartStopControlsReceiving</code> 失败，日志里出现真实 API 报错 <code>1000040346: app_id is invalid</code>（假凭据打到了飞书线上）。</dd>
+        <dt>根因</dt><dd>① <code>Start()</code> 会真的拉起 WS goroutine 去连接；② 断言仍在期望 <code>TransportWebhook</code>，而实现已改为 <code>longconn</code>。</dd>
+        <dt>解决</dt><dd>加 <code>disableLongConn</code> 测试开关，<code>Start()</code> 里 <code>if !b.disableLongConn { go lc.run(ctx) }</code>，保证单测<strong>无外部依赖</strong>；断言同步改为 <code>TransportLongConn</code>。</dd>
+      </dl>
+    </div>
+
+    <div class="prob">
+      <div class="prob-h"><span class="prob-n">P7</span><span class="prob-t">状态「接收中」但 bot 不回消息</span><span class="sev">核心</span></div>
+      <dl class="kv">
+        <dt>症状</dt><dd>一切状态正常、无报错，发消息石沉大海。</dd>
+        <dt>根因</dt><dd>长连接路径产出的消息 <strong><code>InstanceID</code> 为空</strong>，<code>handleMessage</code> 按 ID 查 <code>instances</code>/<code>transports</code> 全部落空，走进防御性 <code>return</code> 被静默丢弃。</dd>
+        <dt>解决</dt><dd>透传 <code>instanceID</code> 至 <code>feishuEventToIncoming</code> 并写入消息；新增 3 个回归测试锁定。详见第 7 节。</dd>
+      </dl>
+    </div>
+
+    <div class="prob minor">
+      <div class="prob-h"><span class="prob-n">P8</span><span class="prob-t">重建 Go 后端失败：文件被占用</span><span class="sev m">环境</span></div>
+      <dl class="kv">
+        <dt>症状</dt><dd><code>go build -o bin/LongCat-frontend.exe</code> 报权限/占用错误，无法覆盖。</dd>
+        <dt>根因</dt><dd>正在运行的 Tauri 桌面端把 Go 后端作为子进程拉起，进程锁住了该 exe。</dd>
+        <dt>解决</dt><dd>重建前先 <code>taskkill /IM LongCat-frontend.exe /F</code> 与 <code>taskkill /IM longcat-frontend-desktop.exe /F</code>。这是 Windows 上的固定前置步骤，已记入项目备忘。</dd>
+      </dl>
+    </div>
+  </section>
+
+  <!-- 9 -->
+  <section id="verify">
+    <h2><span class="h2n">9</span>验证与测试</h2>
+
+    <div class="card">
+      <h3 style="margin-top:0">新增回归测试</h3>
+      <div class="codebox">
+        <div class="codehead"><span class="f">internal/im/feishu_ws_test.go</span><span class="tag new">新文件</span></div>
+        <pre><code class="go">TestFeishuEventToIncomingSetsInstanceID   // ★ 锁死 P7：字段归一化正确且 InstanceID 已写入
+TestFeishuEventToIncomingIgnoresBot       // sender_type=bot/app 返回 nil，防止自问自答回环
+TestFeishuEventToIncomingIgnoresEmptyText // 非文本/空文本消息跳过，不触发 Agent</code></pre>
+      </div>
+      <p class="mini">另有 <span class="ic">TestFeishuAddonsEncodeRoundTrip</span>（qr_test.go）：编码后 base64url 解码 + gunzip，断言 JSON 结构还原出 <span class="ic">scopes.tenant=[im:message]</span> 与 <span class="ic">events.items.tenant=[im.message.receive_v1]</span>。</p>
+
+      <h3>检查项</h3>
+      <ul class="chk">
+        <li><span class="ic">gofmt -l</span> 干净</li>
+        <li><span class="ic">go vet ./internal/im/...</span> 无告警</li>
+        <li><span class="ic">go test ./internal/im/...</span> 全部通过，且<strong>不产生任何外部网络请求</strong></li>
+        <li><span class="ic">go build ./...</span> 通过；<span class="ic">bin/LongCat-frontend.exe --help</span> 冒烟正常</li>
+        <li><span class="ic">cargo tauri build</span> 成功（EXIT_CODE=0），产出 MSI + NSIS 安装包</li>
+        <li><strong>真机端到端：飞书私聊发消息，Agent 正常回复</strong> ✅</li>
+      </ul>
+
+      <div class="call ok"><span class="ct">最有价值的一条验证</span>
+        <p>P7 那个 bug 说明：<strong>单测全绿 + 状态显示正常 ≠ 功能可用</strong>。真正确认功能的只有最后一条真机端到端。所有中间状态指示器都可能在撒谎，除非它监控的就是端到端结果本身。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 10 -->
+  <section id="files">
+    <h2><span class="h2n">10</span>改动文件一览</h2>
+
+    <table class="tbl">
+      <thead><tr><th style="width:34%">文件</th><th style="width:12%">类型</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td><span class="ic">internal/im/feishu_ws.go</span></td><td><span class="yes">新增</span></td><td>WebSocket 长连接客户端 + 事件归一化（含 InstanceID 修复）</td></tr>
+        <tr><td><span class="ic">internal/im/feishu_ws_test.go</span></td><td><span class="yes">新增</span></td><td>3 个回归测试</td></tr>
+        <tr><td><span class="ic">internal/im/qr.go</span></td><td>改动</td><td>Addons 编码与挂载（<span class="ic">defaultFeishuAddons</span> / <span class="ic">feishuAddonsEncode</span> / <span class="ic">appendQueryParam</span>）</td></tr>
+        <tr><td><span class="ic">internal/im/qr_test.go</span></td><td>改动</td><td>Addons 编码往返测试</td></tr>
+        <tr><td><span class="ic">internal/im/runtime.go</span></td><td>改动</td><td><span class="ic">Start</span>/<span class="ic">Stop</span> 接入长连接生命周期，新增 <span class="ic">TransportLongConn</span> 常量</td></tr>
+        <tr><td><span class="ic">internal/im/runtime_test.go</span></td><td>改动</td><td><span class="ic">disableLongConn</span> 开关 + 断言更新</td></tr>
+        <tr><td><span class="ic">internal/im/bridge.go</span></td><td>改动</td><td><span class="ic">longConns</span> 字段；<span class="ic">Status</span>/<span class="ic">ListInstances</span>/<span class="ic">Doctor</span> 判据切换</td></tr>
+        <tr><td><span class="ic">internal/server/web/index.html</span></td><td>改动</td><td>文案改为「WebSocket 长连接（默认）」，状态行显示传输方式</td></tr>
+        <tr><td><span class="ic">go.mod</span> / <span class="ic">go.sum</span></td><td>改动</td><td>引入 <span class="ic">oapi-sdk-go/v3 v3.9.10</span> 及间接依赖</td></tr>
+      </tbody>
+    </table>
+
+    <h3>重新构建的正确顺序</h3>
+    <div class="codebox">
+      <div class="codehead"><span class="f">Windows / Git Bash</span><span class="tag">流程</span></div>
+      <pre><code class="go"># 1. 必须先停掉运行中的桌面端，否则 bin/ 里的 exe 被子进程锁住（P8）
+taskkill /IM LongCat-frontend.exe /F
+taskkill /IM longcat-frontend-desktop.exe /F
+
+# 2. 重建 Go 后端（真正承载 IM 逻辑的部分）
+go build -o bin/LongCat-frontend.exe ./cmd/LongCat-frontend
+
+# 3. 重建 Tauri 桌面壳（Rust 源码没改时可跳过，重启即可生效）
+cd desktop/src-tauri &amp;&amp; cargo tauri build</code></pre>
+    </div>
+    <p class="mini">桌面壳启动时通过 <span class="ic">find_backend()</span> 定位并拉起 <span class="ic">bin/LongCat-frontend.exe serve -addr 127.0.0.1:5510</span>，WebView 加载该地址。所以 <strong>IM 相关改动只需重建 Go 后端 + 重启桌面端</strong>，不必每次都重编 Rust。</p>
+  </section>
+
+  <!-- 11 -->
+  <section id="todo">
+    <h2><span class="h2n">11</span>遗留事项</h2>
+
+    <div class="prob open">
+      <div class="prob-h"><span class="prob-n">R1</span><span class="prob-t">安装包不含 Go 后端二进制</span><span class="sev o">遗留 · 非本次引入</span></div>
+      <dl class="kv">
+        <dt>问题</dt><dd><code>tauri.conf.json</code> 没有配置 <code>externalBin</code>，MSI / NSIS 安装包里只有 icon，<strong>不包含 <code>LongCat-frontend.exe</code></strong>。干净机器上安装后启动会因 <code>find_backend()</code> 找不到后端而失败。</dd>
+        <dt>现状</dt><dd>开发/测试直接运行 <code>target/release/longcat-frontend-desktop.exe</code> 或 <code>cargo tauri dev</code> 均正常（能在仓库 <code>bin/</code> 下找到后端）。</dd>
+        <dt>方案</dt><dd>加 <code>externalBin</code> 配置 + 构建期拷贝 Go 二进制，即可产出自包含安装包。</dd>
+      </dl>
+    </div>
+
+    <div class="prob open">
+      <div class="prob-h"><span class="prob-n">R2</span><span class="prob-t">缺少运行时可观测性</span><span class="sev o">改进建议</span></div>
+      <dl class="kv">
+        <dt>问题</dt><dd>P7 之所以难查，就是因为管线中途<strong>没有任何信号</strong>。<code>handleMessage</code> 的防御性 <code>return</code> 会吞掉所有异常输入。</dd>
+        <dt>建议</dt><dd>① 在该 <code>return</code> 前记一条 warn 日志（打印 InstanceID / ChatID）；② 面板状态区分「已连接」与「已收到过消息」，例如显示最近一次收发时间戳；③ 记录回复接口的返回码，便于区分「没收到」和「回复被拒」。</dd>
+      </dl>
+    </div>
+
+    <div class="prob open">
+      <div class="prob-h"><span class="prob-n">R3</span><span class="prob-t">Addons 权限键的兼容性</span><span class="sev o">待观察</span></div>
+      <dl class="kv">
+        <dt>问题</dt><dd>当前申请的是 <code>im:message</code>。不同类型的应用（个人应用 / 企业自建）对权限键的接受度可能不同。</dd>
+        <dt>备选</dt><dd>若某些账号下被拒，可改用 <code>im:message:send_as_bot</code> 或组合键。当前账号已验证可用。</dd>
+      </dl>
+    </div>
+  </section>
+
+  </main>
+</div>
+
+<footer>
+  LongCat-frontend · 飞书 IM 接入实现复盘 · 2026-08-06 · 状态：已跑通
+</footer>
+
+<script>
+(function(){
+  var KW = /\b(func|package|import|type|struct|interface|map|chan|go|defer|return|if|else|for|range|switch|case|default|break|continue|var|const|nil|true|false|error|string|bool|int|byte|any|make|new|len|append|delete)\b/;
+  var RE = new RegExp(
+    "(#[^\\n]*|\\/\\/[^\\n]*)" +          // 1 注释
+    "|(\"(?:[^\"\\\\\\n]|\\\\.)*\")" +    // 2 字符串
+    "|(`[^`]*`)" +                        // 3 反引号
+    "|" + KW.source +                     // 4 关键字
+    "|([A-Za-z_][A-Za-z0-9_]*)(?=\\()" +  // 5 函数名
+    "|\\b(\\d+(?:\\.\\d+)?)\\b",          // 6 数字
+    "g");
+  function esc(s){return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
+  function hl(src){
+    var out="", last=0, m;
+    RE.lastIndex = 0;
+    while((m = RE.exec(src)) !== null){
+      out += esc(src.slice(last, m.index));
+      if(m[1])      out += '<span class="c">'+esc(m[1])+'</span>';
+      else if(m[2]) out += '<span class="s">'+esc(m[2])+'</span>';
+      else if(m[3]) out += '<span class="s">'+esc(m[3])+'</span>';
+      else if(m[4]) out += '<span class="k">'+esc(m[4])+'</span>';
+      else if(m[5]) out += '<span class="fn">'+esc(m[5])+'</span>';
+      else if(m[6]) out += '<span class="n">'+esc(m[6])+'</span>';
+      last = m.index + m[0].length;
+    }
+    out += esc(src.slice(last));
+    return out;
+  }
+  document.querySelectorAll("pre code").forEach(function(el){
+    el.innerHTML = hl(el.textContent);
+  });
+})();
+</script>
+
+</body>
+</html>

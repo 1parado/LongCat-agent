@@ -67,8 +67,12 @@ type Session struct {
 	DefinitionOverride string
 	// 上下文压缩（按上下文窗口百分比自动压缩旧历史）
 	CompressEnabled   bool    // 是否启用自动压缩
-	ContextWindow     int     // 模型上下文窗口（token），0 表示用默认 128000
+	ContextWindow     int     // 模型上下文窗口（token），0 表示用默认 500000
 	CompressThreshold float64 // 触发压缩的占比（0~1），0 表示用默认 0.8
+	// PlanMode 规划模式开关：开启后只做规划/阅读/产出计划文档，禁止修改代码、
+	// 派生子 Agent、调用外部 MCP 工具。可用 /plan 与 /execute 切换，
+	// 也可 /mode plan|execute 切换。
+	PlanMode bool
 }
 
 // ToolEvent describes one tool invocation for clients that want to render the
@@ -139,7 +143,7 @@ func (s *Session) runStream(ctx context.Context, input string, attachments []llm
 	msgs = append(msgs, s.Messages...)
 	msgs = append(msgs, llm.Message{Role: "user", Content: input, Attachments: attachments})
 
-	exec := &ToolExecutor{Workspace: s.Workspace, Skills: s.Skills, MCP: s.MCP, Undo: s.Undo, Agents: s.Agents, Manager: s.Manager, Activity: s.Activity, OrchestrationDepth: s.OrchestrationDepth}
+	exec := &ToolExecutor{Workspace: s.Workspace, Skills: s.Skills, MCP: s.MCP, Undo: s.Undo, Agents: s.Agents, Manager: s.Manager, Activity: s.Activity, OrchestrationDepth: s.OrchestrationDepth, PlanMode: s.PlanMode}
 	onDelta := func(d string) {
 		if !sendEvent(ctx, out, StreamEvent{Kind: "delta", Delta: d}) {
 			return
@@ -242,6 +246,19 @@ func (s *Session) SetMode(m string) error {
 	return nil
 }
 
+// SetPlanMode 切换规划/执行模式。on=true 进入 Plan 模式（只规划、可建文档、不改代码）。
+func (s *Session) SetPlanMode(on bool) {
+	s.PlanMode = on
+}
+
+// PlanLabel 返回当前规划模式的人类可读标签，用于状态栏/提示。
+func (s *Session) PlanLabel() string {
+	if s.PlanMode {
+		return "plan"
+	}
+	return "execute"
+}
+
 // NewSession 创建会话并加载技能：项目级 skillsDir（可选）+ 用户级
 // ~/.longcat-frontend/skills/（Market 安装的技能）。
 func NewSession(m *llm.Manager, skillsDir string) (*Session, error) {
@@ -271,7 +288,7 @@ func NewSession(m *llm.Manager, skillsDir string) (*Session, error) {
 	if discovered, err := DiscoverAgents("", userAgents, bundledAgents); err == nil {
 		agents = discovered
 	}
-	return &Session{Manager: m, Skills: loaded, Agents: agents, Activity: NewActivityTracker(), CompressEnabled: true, ContextWindow: 128000, CompressThreshold: 0.8}, nil
+	return &Session{Manager: m, Skills: loaded, Agents: agents, Activity: NewActivityTracker(), CompressEnabled: true, ContextWindow: 500000, CompressThreshold: 0.8}, nil
 }
 
 // buildSystem 组装系统提示：基础提示 + 当前模式 + 工作空间 + 技能正文。
@@ -291,6 +308,15 @@ func (s *Session) buildSystem(userInput string) string {
 		b.WriteString("\n\n## 当前模式\n本轮优先采用 ")
 		b.WriteString(modeDesc[s.Mode])
 		b.WriteString("。")
+	}
+	if s.PlanMode {
+		b.WriteString("\n\n## 当前为 Plan 规划模式（只读）\n" +
+			"你处于规划模式，**只能做规划，不能改动代码**。具体约束：\n" +
+			"1. 可以阅读代码、列出目录、加载技能、预览页面（list_directory / read_file / load_skill / preview_file 可用）。\n" +
+			"2. 可以使用 write_file **仅创建文档类文件**（如 .md / .txt 计划文档），**严禁**用它修改任何代码文件（.go/.ts/.js/.py/.vue/.css/.json 等）。\n" +
+			"3. 禁止派生子 Agent（spawn_subagent）、禁止调用外部 MCP 工具。\n" +
+			"4. 你的输出应是一份清晰、可执行的方案：目标、改动点、文件清单、步骤、风险与待确认项。必要时把方案写入工作空间下的 PLAN.md 等文档供用户审阅。\n" +
+			"5. 不要假装已经实施了改动；如实说明哪些是计划、哪些尚未执行。")
 	}
 	if len(s.Skills) > 0 {
 		b.WriteString("\n\n## 可用技能\n需要某项专门知识时，主动调用 `load_skill` 工具读取正文。\n")
@@ -427,7 +453,7 @@ func (s *Session) maybeCompress(ctx context.Context, provider llm.Provider) {
 	}
 	cw := s.ContextWindow
 	if cw <= 0 {
-		cw = 128000
+		cw = 500000
 	}
 	th := s.CompressThreshold
 	if th <= 0 {

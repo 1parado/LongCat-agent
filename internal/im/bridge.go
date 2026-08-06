@@ -33,8 +33,10 @@ type scanSession struct {
 	Refreshes int
 }
 
-// Bridge is the provider-neutral desktop bridge state. Connector transports
-// can attach to this lifecycle without exposing credentials to the Web UI.
+// Bridge is the provider-neutral desktop bridge state. It owns both the
+// control plane (credentials, QR onboarding, persistence) and the data plane
+// lifecycle (inbound receive pipeline) so the Web UI can enable/disable
+// message reception with a single switch.
 type Bridge struct {
 	mu          sync.Mutex
 	configPath  string
@@ -47,6 +49,19 @@ type Bridge struct {
 	secrets     map[string]map[string]string
 	scans       map[string]*scanSession
 	client      *http.Client
+
+	// 数据面：接收管线。running 为 true 时 inbox/dispatcher 有效。
+	handler    MessageHandler
+	runCancel  context.CancelFunc
+	inbox      chan IncomingMessage
+	wg         sync.WaitGroup
+	transports map[string]*feishuClient   // 发送客户端（tenant_access_token + 回复消息）
+	longConns  map[string]*feishuLongConn // 接收长连接（WebSocket，免公网回调）
+	// disableLongConn 仅用于单测：跳过长连接的实际建立，避免测试触发真实网络。
+	disableLongConn bool
+	seen       map[string]time.Time
+	// openBaseOverride 仅用于测试，把开放平台域名指向本地 httptest。
+	openBaseOverride string
 }
 
 func NewBridge() (*Bridge, error) {
@@ -58,7 +73,7 @@ func NewBridge() (*Bridge, error) {
 }
 
 func NewBridgeAt(configPath, secretsPath string) (*Bridge, error) {
-	b := &Bridge{configPath: configPath, secretsPath: secretsPath, lifecycle: "attached", instances: map[string]ChannelInstance{}, secrets: map[string]map[string]string{}, scans: map[string]*scanSession{}, client: &http.Client{Timeout: 35 * time.Second}}
+	b := &Bridge{configPath: configPath, secretsPath: secretsPath, lifecycle: "attached", instances: map[string]ChannelInstance{}, secrets: map[string]map[string]string{}, scans: map[string]*scanSession{}, client: &http.Client{Timeout: 35 * time.Second}, transports: map[string]*feishuClient{}, longConns: map[string]*feishuLongConn{}, seen: map[string]time.Time{}}
 	if err := b.load(); err != nil {
 		return nil, err
 	}
@@ -149,13 +164,26 @@ func (b *Bridge) Status() BridgeStatus {
 	}
 	connected := []ChannelInstance{}
 	if b.running {
-		for _, instance := range b.instances {
-			if instance.Enabled && instance.HasCredentials {
-				connected = append(connected, publicInstance(instance, StatusConnected))
+		// 只列出真正挂上了长连接的实例，而不是“有凭据”就算连上。
+		for id := range b.longConns {
+			instance, ok := b.instances[id]
+			if !ok {
+				continue
 			}
+			tone := StatusConnected
+			if instance.LastError != "" {
+				tone = StatusError
+			}
+			instance.Receiving = true
+			instance.WebhookPath = WebhookPathPrefix + id
+			connected = append(connected, publicInstance(instance, tone))
 		}
 	}
-	return BridgeStatus{State: state, Enabled: b.enabled, Lifecycle: b.lifecycle, ConnectedChannels: connected, LastError: b.lastError, Backend: "go-sidecar"}
+	transport := ""
+	if b.running {
+		transport = TransportLongConn
+	}
+	return BridgeStatus{State: state, Enabled: b.enabled, Lifecycle: b.lifecycle, ConnectedChannels: connected, LastError: b.lastError, Backend: "go-sidecar", Receiving: b.running, Transport: transport}
 }
 
 func (b *Bridge) hasReadyInstanceLocked() bool {
@@ -182,24 +210,12 @@ func (b *Bridge) ListInstances() []ChannelInstance {
 		if instance.HasCredentials {
 			instance.Credentials = "im:" + instance.ID
 		}
+		_, receiving := b.longConns[instance.ID]
+		instance.Receiving = receiving
+		instance.WebhookPath = WebhookPathPrefix + instance.ID
 		out = append(out, publicInstance(instance, instance.Status))
 	}
 	return out
-}
-
-func (b *Bridge) Start() BridgeStatus {
-	b.mu.Lock()
-	b.enabled, b.running, b.lastError = true, true, ""
-	_ = b.saveLocked()
-	b.mu.Unlock()
-	return b.Status()
-}
-func (b *Bridge) Stop() BridgeStatus {
-	b.mu.Lock()
-	b.running, b.enabled = false, false
-	_ = b.saveLocked()
-	b.mu.Unlock()
-	return b.Status()
 }
 
 func (b *Bridge) SaveInstance(instance ChannelInstance, credentials map[string]string, connect bool) (ChannelInstance, error) {
@@ -213,9 +229,21 @@ func (b *Bridge) SaveInstance(instance ChannelInstance, credentials map[string]s
 		return ChannelInstance{}, errors.New("IM 渠道不能为空")
 	}
 	b.mu.Lock()
-	defer b.mu.Unlock()
 	if len(credentials) > 0 {
-		b.secrets[instance.ID] = credentials
+		merged := b.secrets[instance.ID]
+		if merged == nil {
+			merged = map[string]string{}
+		}
+		// 合并而非覆盖：扫码只带回 app_id/app_secret，encrypt_key 等
+		// 事件订阅凭据是后续单独填写的，不能被下一次保存清掉。
+		for key, value := range credentials {
+			if strings.TrimSpace(value) == "" {
+				delete(merged, key)
+				continue
+			}
+			merged[key] = value
+		}
+		b.secrets[instance.ID] = merged
 		instance.Credentials = "im:" + instance.ID
 	}
 	if len(b.secrets[instance.ID]) == 0 {
@@ -227,38 +255,71 @@ func (b *Bridge) SaveInstance(instance ChannelInstance, credentials map[string]s
 	} else {
 		instance.Status = StatusUnconfigured
 	}
+	instance.Receiving, instance.WebhookPath = false, WebhookPathPrefix+instance.ID
 	b.instances[instance.ID] = instance
-	if connect && instance.Enabled && instance.HasCredentials {
-		b.enabled, b.running = true, true
-	}
-	if err := b.saveLocked(); err != nil {
+	wasRunning := b.running
+	err := b.saveLocked()
+	b.mu.Unlock()
+	if err != nil {
 		return ChannelInstance{}, err
+	}
+	// 新实例要挂上接收通道必须重建传输表，所以运行中先停再启。
+	if connect && instance.Enabled && instance.HasCredentials {
+		if wasRunning {
+			b.Stop()
+		}
+		b.Start()
+	} else if wasRunning {
+		b.Stop()
+		b.Start()
 	}
 	return publicInstance(instance, instance.Status), nil
 }
 
 func (b *Bridge) DeleteInstance(id string) error {
 	b.mu.Lock()
-	defer b.mu.Unlock()
 	if _, ok := b.instances[id]; !ok {
+		b.mu.Unlock()
 		return errors.New("IM 实例不存在")
 	}
 	delete(b.instances, id)
 	delete(b.secrets, id)
-	return b.saveLocked()
+	delete(b.transports, id)
+	err := b.saveLocked()
+	b.mu.Unlock()
+	return err
 }
 
 func (b *Bridge) Doctor() map[string]any {
 	b.mu.Lock()
 	b.refreshCredentialFlagsLocked()
 	reports := []map[string]any{}
-	for _, instance := range b.instances {
+	for id, instance := range b.instances {
 		tone := string(instance.Status)
 		hint := ""
-		if !instance.HasCredentials {
+		_, receiving := b.longConns[id]
+		switch {
+		case !instance.HasCredentials:
 			tone, hint = string(StatusUnconfigured), "请绑定凭据或使用二维码登录"
+		case !instance.Enabled:
+			hint = "实例已禁用，启用后才会接收消息"
+		case instance.LastError != "":
+			tone, hint = string(StatusError), instance.LastError
+		case !b.running:
+			hint = "IM 接收未启用，点击“启用接收”后生效"
+		case !receiving:
+			hint = "该渠道暂不支持接收消息"
+		default:
+			hint = "已通过 WebSocket 长连接接收消息（无需公网回调，扫码时已自动订阅事件）"
 		}
-		reports = append(reports, map[string]any{"name": instance.Name, "channel": instance.Channel, "healthy": instance.HasCredentials && instance.Enabled, "tone": tone, "hint": hint})
+		reports = append(reports, map[string]any{
+			"name": instance.Name, "channel": instance.Channel,
+			"healthy":      instance.HasCredentials && instance.Enabled && receiving && instance.LastError == "",
+			"tone":         tone,
+			"hint":         hint,
+			"receiving":    receiving,
+			"webhook_path": WebhookPathPrefix + id,
+		})
 	}
 	state := "stopped"
 	if b.running {
@@ -266,7 +327,11 @@ func (b *Bridge) Doctor() map[string]any {
 	} else if b.enabled && b.hasReadyInstanceLocked() {
 		state = "degraded"
 	}
-	status := BridgeStatus{State: state, Enabled: b.enabled, Lifecycle: b.lifecycle, LastError: b.lastError, Backend: "go-sidecar"}
+	transport := ""
+	if b.running {
+		transport = TransportLongConn
+	}
+	status := BridgeStatus{State: state, Enabled: b.enabled, Lifecycle: b.lifecycle, LastError: b.lastError, Backend: "go-sidecar", Receiving: b.running, Transport: transport, ConnectedChannels: []ChannelInstance{}}
 	b.mu.Unlock()
 	return map[string]any{"ok": status.LastError == "", "state": status, "instances": reports}
 }
@@ -308,8 +373,8 @@ func postForm(ctx context.Context, client *http.Client, endpoint string, values 
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		return nil, fmt.Errorf("HTTP %s: %w", resp.Status, err)
 	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("HTTP %s", resp.Status)
-	}
+	// 飞书 app/registration 在 pending / slow_down 等「正常等待态」会返回非 2xx（如 400），
+	// 但响应体仍是含 error 字段的合法 JSON。调用方依据 body 内的 error 字段判断状态，
+	// 因此这里不按 HTTP 状态码报错（参考 grok-app 的 registrationCall：忽略状态码只看 body）。
 	return body, nil
 }

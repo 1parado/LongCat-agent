@@ -63,6 +63,11 @@ type ChannelInstance struct {
 	Status         StatusTone      `json:"status"`
 	HasCredentials bool            `json:"has_credentials"`
 	LastError      string          `json:"last_error,omitempty"`
+	// WebhookPath 是该实例专属的事件订阅回调路径，需要填到开放平台的
+	// “事件与回调 → 事件配置”里。只读字段，由 Bridge 计算。
+	WebhookPath string `json:"webhook_path,omitempty"`
+	// Receiving 表示该实例当前是否已挂载接收通道。
+	Receiving bool `json:"receiving"`
 }
 
 type BridgeStatus struct {
@@ -72,6 +77,10 @@ type BridgeStatus struct {
 	ConnectedChannels []ChannelInstance `json:"connected_channels"`
 	LastError         string            `json:"last_error,omitempty"`
 	Backend           string            `json:"backend"`
+	// Receiving 表示接收管线（inbox + dispatcher）是否在运行。
+	Receiving bool `json:"receiving"`
+	// Transport 说明当前入站消息的接入方式。
+	Transport string `json:"transport,omitempty"`
 }
 
 type ScanBeginResult struct {
@@ -91,6 +100,11 @@ type ScanPollResult struct {
 	Error           string `json:"error,omitempty"`
 	VerificationURI string `json:"verification_uri,omitempty"`
 	DeviceCode      string `json:"device_code,omitempty"`
+	// SlowDown 表示飞书要求降低轮询频率（HTTP 400 + error=slow_down）。
+	// 前端应据此增大下次轮询间隔，而非当作错误中断。
+	SlowDown bool `json:"slow_down,omitempty"`
+	// IntervalSec 建议的下次轮询间隔（秒），来自 begin 响应或飞书动态指示。
+	IntervalSec int `json:"interval_sec,omitempty"`
 }
 
 type ControlType string
@@ -114,10 +128,16 @@ type ControlCommand struct {
 	Query string      `json:"query,omitempty"`
 	Text  string      `json:"text,omitempty"`
 }
+
+// IncomingMessage 是所有渠道统一的入站消息模型。适配器负责把各家协议
+// 归一化到这里，Bridge 与 Agent 侧不感知具体平台。
 type IncomingMessage struct {
-	Channel   RemoteChannelID `json:"channel"`
-	UserID    string          `json:"user_id"`
-	ChatID    string          `json:"chat_id"`
-	Text      string          `json:"text"`
-	Mentioned bool            `json:"mentioned"`
+	InstanceID string          `json:"instance_id"`
+	Channel    RemoteChannelID `json:"channel"`
+	UserID     string          `json:"user_id"`
+	ChatID     string          `json:"chat_id"`
+	ChatType   string          `json:"chat_type"` // p2p | group
+	MessageID  string          `json:"message_id"`
+	Text       string          `json:"text"`
+	Mentioned  bool            `json:"mentioned"`
 }

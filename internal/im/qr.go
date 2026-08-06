@@ -1,7 +1,10 @@
 package im
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -35,6 +38,17 @@ func (b *Bridge) scanFeishuBegin(ctx context.Context, channel RemoteChannelID) (
 	if code == "" || rawURI == "" {
 		return ScanBeginResult{}, fmt.Errorf("OAuth 返回缺少二维码信息")
 	}
+	// 在二维码 URL 上挂载 Addons：用户扫码创建机器人时，开放平台会据此自动
+	// 订阅 im.message.receive_v1 事件并申请 im:message 权限，省去手动到
+	// 「事件与回调」里填事件订阅与权限的步骤。长连接接收模式下不需要回调地址，
+	// 因此 callbacks 留空（事件通过 WebSocket 长连接直接推送，无需公网可达）。
+	addons, aerr := feishuAddonsEncode(defaultFeishuAddons())
+	if aerr != nil {
+		return ScanBeginResult{}, fmt.Errorf("构造飞书 Addons 失败: %w", aerr)
+	}
+	rawURI = appendQueryParam(rawURI, "addons", addons)
+	rawURI = appendQueryParam(rawURI, "from", "sdk")
+	rawURI = appendQueryParam(rawURI, "tp", "sdk")
 	image, err := qrDataURL(rawURI)
 	if err != nil {
 		return ScanBeginResult{}, err
@@ -131,8 +145,11 @@ func (b *Bridge) ScanPoll(ctx context.Context, channel RemoteChannelID, code str
 		}
 		errorCode, _ := data["error"].(string)
 		switch errorCode {
-		case "", "authorization_pending", "slow_down":
+		case "", "authorization_pending":
 			return ScanPollResult{Status: "pending", Platform: platform}, nil
+		case "slow_down":
+			// 飞书要求降低轮询频率：保持 pending 但置 SlowDown，让前端退避而非中断。
+			return ScanPollResult{Status: "pending", SlowDown: true, Platform: platform}, nil
 		case "access_denied":
 			return ScanPollResult{Status: "denied", Error: "授权被拒绝", Platform: platform}, nil
 		case "expired_token":
@@ -214,6 +231,54 @@ func (b *Bridge) getJSON(ctx context.Context, endpoint, route string) (map[strin
 	return data, nil
 }
 func (b *Bridge) finishScan(code string) { b.mu.Lock(); delete(b.scans, code); b.mu.Unlock() }
+
+// defaultFeishuAddons 返回扫码时希望开放平台自动配置的权限与事件。
+//   - scopes: 申请 im:message（收发消息）权限；
+//   - events: 订阅 im.message.receive_v1 接收消息事件。
+//
+// 长连接接收不需要 HTTP 回调地址，因此 callbacks 留空。结构需与飞书官方
+// SDK（scene/registration/addons.go）一致，否则开放平台会拒绝挂载。
+func defaultFeishuAddons() map[string]any {
+	return map[string]any{
+		"scopes": map[string][]string{
+			"tenant": {"im:message"},
+		},
+		"events": map[string]any{
+			"items": map[string][]string{
+				"tenant": {"im.message.receive_v1"},
+			},
+		},
+	}
+}
+
+// feishuAddonsEncode 把 Addons 结构 gzip 压缩后用 base64url 编码，
+// 与飞书官方 SDK（scene/registration/addons.go: encodeAddons）的编码方式一致：
+// base64.RawURLEncoding(gzip(JSON))。
+func feishuAddonsEncode(addons map[string]any) (string, error) {
+	body, err := json.Marshal(addons)
+	if err != nil {
+		return "", fmt.Errorf("marshal addons: %w", err)
+	}
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	if _, err := gz.Write(body); err != nil {
+		_ = gz.Close()
+		return "", fmt.Errorf("gzip addons: %w", err)
+	}
+	if err := gz.Close(); err != nil {
+		return "", fmt.Errorf("gzip addons close: %w", err)
+	}
+	return base64.RawURLEncoding.EncodeToString(buf.Bytes()), nil
+}
+
+// appendQueryParam 在 URL 上追加查询参数，自动处理已有 ? 的情况。
+func appendQueryParam(rawURL, key, value string) string {
+	sep := "?"
+	if strings.Contains(rawURL, "?") {
+		sep = "&"
+	}
+	return rawURL + sep + url.QueryEscape(key) + "=" + url.QueryEscape(value)
+}
 func number(value any, fallback float64) float64 {
 	switch n := value.(type) {
 	case float64:

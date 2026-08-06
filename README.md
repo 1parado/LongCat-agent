@@ -25,3 +25,7 @@
 | Skills 管理 | IM 平台 |
 | --- | --- |
 | ![Skills 管理](pic4.png) | ![IM 平台](pic5.png) |
+
+| IM 平台对话 | 流式输出 |
+| --- | --- |
+| ![IM 平台对话](pic6.png) | ![流式输出](pic7.png) |

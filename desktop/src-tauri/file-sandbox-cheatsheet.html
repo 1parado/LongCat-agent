@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>文件操作安全沙箱 · 面试速记卡</title>
+<meta name="description" content="LongCat-frontend 文件操作安全沙箱实现速记卡：路径逃逸检测、Undo 历史、原子写入，附面试 Q&A。">
+<style>
+  :root{
+    --bg:#0d1220; --panel:#151c2e; --panel2:#1a2338; --border:#26304a;
+    --text:#e8ecf6; --muted:#93a0bd; --accent:#6ea8fe; --green:#7ee787;
+    --amber:#f2cc60; --red:#ff7b72; --violet:#c792ea; --teal:#56d4dd;
+    --code-bg:#0a0f1a; --chip-bg:#223052;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{
+    background:var(--bg); color:var(--text);
+    font-family:"PingFang SC","Microsoft YaHei","Segoe UI",system-ui,-apple-system,sans-serif;
+    line-height:1.65; padding:32px 16px 64px;
+    background-image:radial-gradient(1200px 500px at 20% -10%, rgba(110,168,254,.09), transparent 60%),
+                     radial-gradient(900px 400px at 90% 0%, rgba(199,146,234,.07), transparent 60%);
+  }
+  .wrap{max-width:1060px; margin:0 auto;}
+  code,pre{font-family:"Cascadia Code","JetBrains Mono",Consolas,"Courier New",monospace;}
+
+  /* ===== Header ===== */
+  header{text-align:center; margin-bottom:28px;}
+  header h1{
+    font-size:30px; font-weight:800; letter-spacing:.5px;
+    background:linear-gradient(90deg,#8ab4ff,#c792ea 55%,#56d4dd);
+    -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;
+  }
+  header .sub{color:var(--muted); margin-top:6px; font-size:14px;}
+  .chips{display:flex; flex-wrap:wrap; gap:10px; justify-content:center; margin-top:16px;}
+  .chip{
+    background:var(--chip-bg); border:1px solid var(--border); color:var(--text);
+    font-size:12.5px; padding:5px 14px; border-radius:999px;
+  }
+  .chip b{color:var(--amber);}
+
+  /* ===== Tabs ===== */
+  .tabs{display:flex; gap:8px; justify-content:center; margin-bottom:24px;}
+  .tab-btn{
+    background:var(--panel); color:var(--muted); border:1px solid var(--border);
+    padding:9px 22px; border-radius:10px; font-size:14px; cursor:pointer;
+    transition:all .15s ease;
+  }
+  .tab-btn:hover{color:var(--text); border-color:#34405f;}
+  .tab-btn.active{
+    background:linear-gradient(135deg,#24407a,#2a2f5e); color:#fff;
+    border-color:#3d5aa8; box-shadow:0 4px 16px rgba(61,90,168,.35);
+  }
+  .tab-pane{display:none; animation:fadeIn .25s ease;}
+  .tab-pane.active{display:block;}
+  @keyframes fadeIn{from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:none;}}
+
+  /* ===== Section title ===== */
+  .sec-title{
+    font-size:18px; font-weight:700; margin:34px 0 14px;
+    display:flex; align-items:center; gap:10px;
+  }
+  .sec-title::before{content:""; width:4px; height:18px; border-radius:2px;
+    background:linear-gradient(180deg,#6ea8fe,#c792ea);}
+  .sec-title .en{color:var(--muted); font-weight:400; font-size:12.5px;}
+
+  /* ===== Defense layers ===== */
+  .layer{
+    display:flex; align-items:center; gap:14px;
+    background:var(--panel); border:1px solid var(--border); border-left:4px solid var(--accent);
+    border-radius:10px; padding:12px 16px; margin-bottom:10px;
+  }
+  .layer .idx{
+    flex:0 0 30px; height:30px; border-radius:8px; display:grid; place-items:center;
+    background:var(--chip-bg); color:var(--accent); font-weight:700; font-size:14px;
+  }
+  .layer .t{flex:1;}
+  .layer .t b{font-size:15px;}
+  .layer .t span{display:block; color:var(--muted); font-size:13px;}
+  .layer .ref{color:var(--teal); font-size:12px; white-space:nowrap; font-family:Consolas,monospace;}
+  .layer.policy{border-left-color:var(--amber);}
+  .layer.policy .idx{color:var(--amber);}
+  .layer.policy .ref{color:var(--amber);}
+
+  /* ===== Flow ===== */
+  .flow{display:flex; flex-wrap:wrap; gap:8px; align-items:stretch; background:var(--panel);
+    border:1px solid var(--border); border-radius:12px; padding:16px;}
+  .step{
+    flex:1 1 150px; background:var(--panel2); border:1px solid var(--border);
+    border-radius:9px; padding:10px 12px; font-size:13px;
+  }
+  .step b{display:block; color:var(--accent); font-size:13.5px; margin-bottom:2px;}
+  .step span{color:var(--muted); font-size:12px;}
+  .arrow{align-self:center; color:var(--muted); font-size:18px;}
+
+  /* ===== Table ===== */
+  .tbl{width:100%; border-collapse:collapse; font-size:13px; background:var(--panel);
+    border:1px solid var(--border); border-radius:12px; overflow:hidden;}
+  .tbl th{background:var(--panel2); text-align:left; padding:10px 14px; color:var(--muted);
+    font-weight:600; border-bottom:1px solid var(--border); font-size:12.5px;}
+  .tbl td{padding:9px 14px; border-bottom:1px solid #1f2942; vertical-align:top;}
+  .tbl tr:last-child td{border-bottom:none;}
+  .tbl td code{color:var(--teal); font-size:12px;}
+  .tbl td .dim{color:var(--muted);}
+
+  /* ===== Callout ===== */
+  .callout{
+    border:1px solid #3a4d1f; background:rgba(126,231,135,.06); border-radius:10px;
+    padding:14px 18px; font-size:13.5px; color:#cfe8d2;
+  }
+  .callout b{color:var(--green);}
+  .callout li{margin:4px 0 4px 18px;}
+
+  /* ===== Code cards ===== */
+  .code-card{
+    background:var(--panel); border:1px solid var(--border); border-radius:12px;
+    margin-bottom:18px; overflow:hidden;
+  }
+  .code-head{
+    display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center;
+    padding:11px 18px; background:var(--panel2); border-bottom:1px solid var(--border);
+    font-size:14px; font-weight:600;
+  }
+  .code-head .n{
+    background:linear-gradient(135deg,#24407a,#2a2f5e); color:#8ab4ff;
+    width:24px; height:24px; border-radius:7px; display:grid; place-items:center;
+    font-size:12.5px; font-weight:800;
+  }
+  .code-head .loc{color:var(--teal); font-size:12px; font-family:Consolas,monospace; font-weight:400;}
+  .code-head .tag{margin-left:auto; font-size:11.5px; color:var(--muted);
+    background:var(--chip-bg); border:1px solid var(--border); padding:2px 10px; border-radius:999px;}
+  pre.code-out{
+    background:var(--code-bg); padding:16px 18px; overflow-x:auto;
+    font-size:13px; line-height:1.7; tab-size:4;
+  }
+  pre.code-out .c{color:#5f7a9e; font-style:italic;}
+  pre.code-out .c.note{color:var(--amber); background:rgba(242,204,96,.08); display:block;}
+  pre.code-out .s{color:var(--amber);}
+  pre.code-out .k{color:var(--violet); font-weight:600;}
+  pre.code-out .t{color:var(--teal);}
+  pre.code-out .n{color:#ff9d5c;}
+  pre.code-out .fn{color:#8ab4ff;}
+  .points{padding:12px 18px 14px; border-top:1px solid #1f2942; font-size:13px; color:var(--muted);}
+  .points li{margin:3px 0 3px 20px;}
+  .points b{color:var(--accent);}
+  .points .risk{color:var(--red);}
+
+  /* ===== Q&A cards ===== */
+  .qa-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:14px;}
+  .qa-card{perspective:1200px; height:300px; cursor:pointer;}
+  .qa-card .inner{position:relative; width:100%; height:100%; transform-style:preserve-3d;
+    transition:transform .5s cubic-bezier(.4,.2,.2,1);}
+  .qa-card.flipped .inner{transform:rotateY(180deg);}
+  .qa-face{
+    position:absolute; inset:0; backface-visibility:hidden; -webkit-backface-visibility:hidden;
+    border-radius:12px; border:1px solid var(--border); padding:16px 18px; overflow:auto;
+  }
+  .qa-front{background:var(--panel); display:flex; flex-direction:column;}
+  .qa-front .q{font-size:15px; font-weight:700; margin-top:8px; line-height:1.55;}
+  .qa-back{background:linear-gradient(160deg,#1a2338,#151c2e); transform:rotateY(180deg);
+    border-color:#3d5aa8;}
+  .qa-back h4{color:var(--accent); font-size:13px; margin-bottom:8px; letter-spacing:.5px;}
+  .qa-back ul{list-style:none;}
+  .qa-back li{font-size:12.8px; color:#c6cfe4; margin:6px 0; padding-left:16px; position:relative;}
+  .qa-back li::before{content:"▸"; position:absolute; left:0; color:var(--green);}
+  .qa-back .tag2{display:inline-block; margin-top:8px; font-size:11px; color:var(--muted);}
+  .qa-card .cat{
+    align-self:flex-start; font-size:11px; padding:2px 10px; border-radius:999px;
+    border:1px solid var(--border); color:var(--amber);
+  }
+  .qa-card .hint{margin-top:auto; font-size:11px; color:#4d5a7d; padding-top:8px;}
+  .qa-card.bonus .qa-front{border-color:rgba(242,204,96,.5);}
+  .qa-card.bonus .cat{color:var(--green); border-color:rgba(126,231,135,.4);}
+  .qa-toolbar{display:flex; justify-content:space-between; align-items:center; margin:30px 0 14px;}
+  .qa-toolbar .sec-title{margin:0;}
+  #revealAll{
+    background:var(--chip-bg); color:var(--text); border:1px solid var(--border);
+    padding:7px 18px; border-radius:9px; cursor:pointer; font-size:13px;
+  }
+  #revealAll:hover{border-color:var(--accent); color:var(--accent);}
+
+  footer{margin-top:48px; text-align:center; color:#4d5a7d; font-size:12px; line-height:1.9;}
+  footer code{color:#6b7a9c;}
+
+  @media (max-width:640px){
+    header h1{font-size:23px;}
+    .qa-grid{grid-template-columns:1fr;}
+  }
+  @media print{
+    body{background:#fff; color:#111;}
+    .tab-pane{display:block !important;}
+    .qa-card .inner{transform:none !important;}
+    .qa-face{position:static; backface-visibility:visible;}
+    .qa-back{transform:none; display:block; margin-top:6px;}
+    .tab-btn,#revealAll{display:none;}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>文件操作安全沙箱 · 面试速记卡</h1>
+    <div class="sub">LongCat-frontend 实际实现（internal/workspace + internal/agent/tools.go + internal/server）· 路径逃逸检测 / Undo 历史 / 原子写入</div>
+    <div class="chips">
+      <span class="chip">🧱 <b>5 层</b>纵深防御</span>
+      <span class="chip">↩️ <b>100 条</b> Undo 上限</span>
+      <span class="chip">⚛️ <b>tmp+rename</b> 原子写</span>
+      <span class="chip">🗂️ <b>undo.json</b> 磁盘持久化</span>
+      <span class="chip">📋 Plan 模式策略层</span>
+    </div>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab-btn active" data-tab="overview">① 实现全景</button>
+    <button class="tab-btn" data-tab="code">② 核心代码</button>
+    <button class="tab-btn" data-tab="qa">③ 面试问答</button>
+  </nav>
+
+  <!-- ================= Tab 1: Overview ================= -->
+  <section class="tab-pane active" id="tab-overview">
+
+    <div class="sec-title">纵深防御五层架构 <span class="en">Defense in Depth</span></div>
+    <div class="layer"><div class="idx">1</div>
+      <div class="t"><b>工作空间边界校验</b><span>ValidateWorkspace：路径非空、Abs 归一化、必须存在且为目录，才可作为 ToolExecutor.Workspace</span></div>
+      <div class="ref">tools.go:44-61</div></div>
+    <div class="layer"><div class="idx">2</div>
+      <div class="t"><b>词法逃逸检测</b><span>filepath.Clean + Join 归一化 → filepath.Rel 判 `..` 前缀，拦 `../`、`a/../../b`、分隔符混用</span></div>
+      <div class="ref">tools.go:192-197</div></div>
+    <div class="layer"><div class="idx">3</div>
+      <div class="t"><b>符号链接逃逸检测</b><span>EvalSymlinks 解析真实路径再 Rel 比较；新建文件退到最近已存在父目录解析（Lstat 判断）</span></div>
+      <div class="ref">tools.go:198-210</div></div>
+    <div class="layer"><div class="idx">4</div>
+      <div class="t"><b>Undo 恢复时重校验</b><span>UndoLast 恢复前再调 ResolvePath，防「记录后→恢复前」目录被偷换成符号链接（防 TOCTOU 补救）</span></div>
+      <div class="ref">undo.go:135</div></div>
+    <div class="layer"><div class="idx">5</div>
+      <div class="t"><b>HTTP 层独立校验</b><span>previewFile 不信任浏览器输入：先固化 root 真实路径，再对目标做 rel + EvalSymlinks 双检查，附 CSP 头</span></div>
+      <div class="ref">server.go:220-275</div></div>
+    <div class="layer policy"><div class="idx">+</div>
+      <div class="t"><b>Plan 模式（策略层，与沙箱正交）</b><span>只允许文档扩展名（.md/.txt/.rst…），不暴露 spawn_subagent 与 mcp_* 工具 → 空间约束 × 策略约束</span></div>
+      <div class="ref">tools.go:84-96,149-154</div></div>
+
+    <div class="sec-title">write_file 调用链 <span class="en">Agent 写入链路</span></div>
+    <div class="flow">
+      <div class="step"><b>ExecuteContext</b><span>工具分发入口，解析 JSON 参数</span></div>
+      <div class="arrow">→</div>
+      <div class="step"><b>Plan 过滤</b><span>isDocPath 检查扩展名（仅 Plan 模式）</span></div>
+      <div class="arrow">→</div>
+      <div class="step"><b>resolve() 双层校验</b><span>词法 + 符号链接逃逸检测</span></div>
+      <div class="arrow">→</div>
+      <div class="step"><b>写前读旧内容</b><span>os.ReadFile → previous / existed</span></div>
+      <div class="arrow">→</div>
+      <div class="step"><b>MkdirAll + WriteFile</b><span>自动建父目录，0644</span></div>
+      <div class="arrow">→</div>
+      <div class="step"><b>Undo.Record</b><span>全量快照入栈，上限 100 条</span></div>
+      <div class="arrow">→</div>
+      <div class="step"><b>原子落盘 undo.json</b><span>写 .tmp → os.Rename</span></div>
+    </div>
+
+    <div class="sec-title">撤销链路 <span class="en">Undo 恢复链路</span></div>
+    <div class="flow">
+      <div class="step"><b>Web UI 点击撤销</b><span>GET /api/workspace/undo 列表展示</span></div>
+      <div class="arrow">→</div>
+      <div class="step"><b>POST /api/workspace/undo</b><span>server.go:1152 入口</span></div>
+      <div class="arrow">→</div>
+      <div class="step"><b>UndoLast</b><span>栈尾找该 workspace 最近一条</span></div>
+      <div class="arrow">→</div>
+      <div class="step"><b>ResolvePath 重校验</b><span>undo.go:135 防链接偷换</span></div>
+      <div class="arrow">→</div>
+      <div class="step"><b>写回旧内容 / 删除</b><span>Existed=true 恢复；false 则 os.Remove</span></div>
+      <div class="arrow">→</div>
+      <div class="step"><b>弹出条目 + 落盘</b><span>append 切片删除 + saveLocked</span></div>
+    </div>
+
+    <div class="sec-title">关键文件索引 <span class="en">File Index</span></div>
+    <table class="tbl">
+      <tr><th>文件</th><th>职责</th><th>关键位置</th></tr>
+      <tr><td><code>internal/agent/tools.go</code></td><td>工具执行器：resolve 双层校验、write 记 Undo、Plan 过滤</td><td><code>resolve:180-212</code> <code>write:243-269</code> <code>isDocPath:37-42</code></td></tr>
+      <tr><td><code>internal/workspace/changes.go</code></td><td>ResolvePath 公共校验（Undo / diff 复用同款逻辑）</td><td><code>37-65</code></td></tr>
+      <tr><td><code>internal/workspace/undo.go</code></td><td>Undo 存储：Record / UndoLast / Diff、原子落盘</td><td><code>Record:75-92</code> <code>UndoLast:115-148</code> <code>saveLocked:66-74</code></td></tr>
+      <tr><td><code>internal/workspace/store.go</code></td><td>工作空间/会话持久化（同款 tmp+rename 原子写）</td><td><code>saveLocked:239-258</code> <code>canonicalFolder:84-105</code></td></tr>
+      <tr><td><code>internal/workspace/diff.go</code></td><td>单 hunk 简易 diff（UI 另存精确 before/after）</td><td><code>UnifiedDiff:17-40</code></td></tr>
+      <tr><td><code>internal/workspace/watcher.go</code></td><td>500ms 轮询 watcher，跳过 VCS 元数据，跨平台</td><td><code>NewWatcher:22-38</code></td></tr>
+      <tr><td><code>internal/server/server.go</code></td><td>previewFile 服务端独立校验、Undo HTTP 接口</td><td><code>previewFile:220-275</code> <code>undo:1141-1167</code></td></tr>
+      <tr><td><code>internal/agent/agent.go</code></td><td>Session.Undo 注入 ToolExecutor</td><td><code>66</code> <code>146</code></td></tr>
+      <tr><td><code>测试文件</code></td><td>逃逸 / Undo / Plan 模式 / 预览路径用例</td><td><code>tools_test.go:40-45</code> <code>undo_test.go</code> <code>planmode_test.go</code> <code>preview_test.go:81</code></td></tr>
+    </table>
+
+    <div class="sec-title">三个「主动说出来」的细节 <span class="en">加分点</span></div>
+    <div class="callout">
+      <ul>
+        <li><b>为什么新建文件要退到父目录解析？</b>EvalSymlinks 需要目标存在；用 <b>Lstat</b>（不跟随链接）判断存在性，不存在则向上退到最近已存在祖先 → 写 <code>link_outside/new.txt</code> 也能拦下。</li>
+        <li><b>EvalSymlinks 失败会被静默跳过</b>：`if evalErr == nil` 才做检查。父目录不存在（新建）可接受，但权限/系统错误也会跳过 → 安全隐患，生产应区分 <code>os.IsNotExist</code> 与其他错误。</li>
+        <li><b>Agent 写用户文件本身不是原子的</b>：write_file 用普通 WriteFile（tools.go:260）；「原子写入」只保障沙箱自己的状态文件（undo.json / workspaces.json / MCP 配置），因为 undo 链一旦损坏整个恢复体系就断了。</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ================= Tab 2: Code ================= -->
+  <section class="tab-pane" id="tab-code">
+    <div class="sec-title">核心代码逐段精读 <span class="en">Key Code · 行号对应 master 分支</span></div>
+
+    <div class="code-card">
+      <div class="code-head"><span class="n">1</span>词法逃逸检测 <span class="loc">internal/agent/tools.go:192-197</span><span class="tag">拦 `../` 遍历</span></div>
+      <script type="text/plain" class="code-src">// resolve()：所有文件工具的必经入口，第一层 = 词法检查
+clean := filepath.Clean(filepath.Join(root, filepath.FromSlash(path))) // 归一化：折叠 . / .. / 分隔符
+rel, err := filepath.Rel(root, clean)
+if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+    return "", errors.New("路径必须位于工作空间内") // 中文错误直接透出给 Agent
+}</script>
+      <pre class="code-out"></pre>
+      <ul class="points">
+        <li><b>要点</b>：FromSlash 统一斜杠 → Clean 折叠 `.`/`..` → Rel 判是否跳出 root。能防 <code>../outside.txt</code>、<code>a/../../b</code>、反斜杠混用。</li>
+        <li class="risk"><b>局限</b>：只处理字符串，防不了符号链接「物理跳转」→ 需要第二层。</li>
+      </ul>
+    </div>
+
+    <div class="code-card">
+      <div class="code-head"><span class="n">2</span>符号链接逃逸检测 <span class="loc">internal/agent/tools.go:198-210</span><span class="tag">拦 link 出沙箱</span></div>
+      <script type="text/plain" class="code-src">// 第二层：词法合法 ≠ 物理合法。把目标解析成真实路径再比一次。
+check := clean
+if _, statErr := os.Lstat(clean); os.IsNotExist(statErr) {
+    check = filepath.Dir(clean) // ▲ 新建文件不存在 → 退到最近已存在父目录解析
+}
+if resolved, evalErr := filepath.EvalSymlinks(check); evalErr == nil {
+    resolvedRoot, rootErr := filepath.EvalSymlinks(root)
+    if rootErr == nil {
+        r, relErr := filepath.Rel(resolvedRoot, resolved)
+        if relErr != nil || r == ".." || strings.HasPrefix(r, ".."+string(filepath.Separator)) {
+            return "", errors.New("路径不能通过符号链接离开工作空间")
+        }
+    }
+}</script>
+      <pre class="code-out"></pre>
+      <ul class="points">
+        <li><b>Lstat vs Stat</b>：Lstat 不跟随链接，用于「文件是否存在」判断，避免误判。</li>
+        <li><b>退父目录</b>：EvalSymlinks 需要目标存在，新建场景向上退，`link_outside/new.txt` 一样被拦。</li>
+        <li class="risk"><b>隐患</b>：`if evalErr == nil` 静默吞错——权限/系统错误时检查被跳过（面试主动指出 = 加分）。</li>
+      </ul>
+    </div>
+
+    <div class="code-card">
+      <div class="code-head"><span class="n">3</span>write()：写前读旧 + 写后记 Undo <span class="loc">internal/agent/tools.go:243-269</span><span class="tag">Undo 快照时机</span></div>
+      <script type="text/plain" class="code-src">func (e *ToolExecutor) write(path, content string) (string, error) {
+    file, err := e.resolve(path)           // ▲ ① 双层逃逸检测
+    if err != nil { return "", err }
+
+    previous, readErr := os.ReadFile(file) // ▲ ② 写入前先读旧内容 → Undo 快照
+    existed := readErr == nil
+    if readErr != nil && !os.IsNotExist(readErr) { return "", readErr }
+
+    if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil { return "", err } // 自动建父目录
+    if err := os.WriteFile(file, []byte(content), 0o644); err != nil { return "", err } // ▲ 注意：本身非原子
+
+    if e.Undo != nil {                     // ▲ ③ 记录撤销快照（写入之后落盘）
+        if err := e.Undo.Record(e.Workspace, path, previous, existed, "agent write_file"); err != nil {
+            return "", err
+        }
+    }
+    return fmt.Sprintf("已写入 %d 字节到 %s", len(content), filepath.ToSlash(path)), nil
+}</script>
+      <pre class="code-out"></pre>
+      <ul class="points">
+        <li><b>Undo 兜底</b>：旧内容先读出，写入失败也不丢「撤销能力」；Record 再调 ResolvePath 复核（undo.go:81）。</li>
+        <li><b>权限</b>：文件 0644、目录 0755；Windows 上基本由 ACL 接管。</li>
+        <li class="risk"><b>讨论点</b>：若 Record 失败则整个工具报错，但文件已写入 → 先写后记的取舍。</li>
+      </ul>
+    </div>
+
+    <div class="code-card">
+      <div class="code-head"><span class="n">4</span>ResolvePath：公共校验（Undo/diff 复用） <span class="loc">internal/workspace/changes.go:37-65</span><span class="tag">同一套逻辑</span></div>
+      <script type="text/plain" class="code-src">// workspace 包内公共函数，与 tools.go resolve() 逻辑一致；
+// 供 Undo 恢复、diff API、服务端路径校验复用。
+func ResolvePath(root, path string) (string, error) {
+    root, err := filepath.Abs(root)
+    if err != nil { return "", err }
+    target := filepath.Clean(filepath.Join(root, filepath.FromSlash(path)))
+    rel, err := filepath.Rel(root, target)
+    if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+        return "", errors.New("路径必须位于工作空间内")
+    }
+    if rootInfo, statErr := os.Stat(root); statErr != nil || !rootInfo.IsDir() {
+        return "", errors.New("工作空间不是目录")
+    }
+    check := target
+    if _, statErr := os.Lstat(check); os.IsNotExist(statErr) { check = filepath.Dir(check) }
+    if resolved, evalErr := filepath.EvalSymlinks(check); evalErr == nil {
+        if resolvedRoot, rootErr := filepath.EvalSymlinks(root); rootErr == nil {
+            r, relErr := filepath.Rel(resolvedRoot, resolved)
+            if relErr != nil || r == ".." || strings.HasPrefix(r, ".."+string(filepath.Separator)) {
+                return "", errors.New("路径不能通过符号链接离开工作空间")
+            }
+        }
+    }
+    return target, nil
+}</script>
+      <pre class="code-out"></pre>
+      <ul class="points">
+        <li><b>复用点</b>：undo.go 的 Record/UndoLast/Diff 全部走它 → 恢复时也做逃逸检测（防链接偷换）。</li>
+        <li class="risk"><b>坏味道</b>：与 tools.go resolve() 高度重复，两处修 bug 容易漏一处 → 面试可提「收敛到一个函数」。</li>
+      </ul>
+    </div>
+
+    <div class="code-card">
+      <div class="code-head"><span class="n">5</span>原子写入：tmp + rename <span class="loc">internal/workspace/undo.go:66-74</span><span class="tag">崩溃不留半写</span></div>
+      <script type="text/plain" class="code-src">// 所有状态文件统一原子写模式：先写 .tmp 再 rename 覆盖。
+func (u *UndoStore) saveLocked() error {
+    data, err := json.MarshalIndent(undoState{Entries: u.entries}, "", "  ")
+    if err != nil { return err }
+    if err := os.MkdirAll(filepath.Dir(u.path), 0o755); err != nil { return err }
+    tmp := u.path + ".tmp"
+    if err := os.WriteFile(tmp, data, 0o600); err != nil { return err } // ▲ 权限 0600（含旧内容，需保密）
+    return os.Rename(tmp, u.path) // ▲ 同目录 rename = 原子替换，进程崩溃也不会留下半个文件
+}</script>
+      <pre class="code-out"></pre>
+      <ul class="points">
+        <li><b>同款模式</b>：store.go:239-258（workspaces.json）、mcp/manager.go:169-173、im/bridge.go:121-136。</li>
+        <li><b>为什么必须同目录</b>：跨文件系统 rename 退化为 copy，不原子。</li>
+        <li class="risk"><b>注意</b>：崩溃可能残留 `.tmp` 文件；Windows 上目标被占用时 rename 会失败。</li>
+      </ul>
+    </div>
+
+    <div class="code-card">
+      <div class="code-head"><span class="n">6</span>UndoLast：恢复 + 重校验 <span class="loc">internal/workspace/undo.go:115-148</span><span class="tag">撤销的核心</span></div>
+      <script type="text/plain" class="code-src">func (u *UndoStore) UndoLast(root string) (UndoEntry, error) {
+    // ... 从栈尾倒序找该 workspace 最近一条 entry
+    entry := u.entries[index]
+
+    target, err := ResolvePath(root, entry.File) // ▲ 恢复前重新校验，防记录后被偷换符号链接
+    if err != nil { return UndoEntry{}, err }
+
+    if entry.Existed {                            // 原文件存在 → 写回旧内容
+        if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil { return UndoEntry{}, err }
+        if err := os.WriteFile(target, []byte(entry.PreviousContent), 0o644); err != nil {
+            return UndoEntry{}, err
+        }
+    } else if err := os.Remove(target); err != nil && !errors.Is(err, os.ErrNotExist) {
+        return UndoEntry{}, err                   // 原本不存在 → 删除新文件
+    }
+    u.entries = append(u.entries[:index], u.entries[index+1:]...) // 弹出该条
+    return entry, u.saveLocked()                  // 落盘
+}</script>
+      <pre class="code-out"></pre>
+      <ul class="points">
+        <li><b>UndoEntry 字段</b>（undo.go:15-27）：ID / Workspace / File / <b>PreviousContent 全量快照</b> / Existed / Timestamp / Action。</li>
+        <li><b>容量</b>：Record 时 `len &gt; 100` 则裁掉最旧（undo.go:88-90）——<b>全局</b>上限，跨工作空间共享。</li>
+        <li class="risk"><b>讨论点</b>：全量存内容，大文件会膨胀 undo.json。</li>
+      </ul>
+    </div>
+
+    <div class="code-card">
+      <div class="code-head"><span class="n">7</span>previewFile：HTTP 入口独立校验 <span class="loc">internal/server/server.go:220-275（精简示意）</span><span class="tag">不可信输入</span></div>
+      <script type="text/plain" class="code-src">func (a *api) previewFile(w http.ResponseWriter, r *http.Request) {
+    root := a.activeWorkspace.Path
+
+    resolvedRoot := root
+    if realRoot, err := filepath.EvalSymlinks(root); err == nil {
+        resolvedRoot = filepath.Clean(realRoot) // ▲ 先固化 root 的真实路径
+    }
+    // 词法层：Clean + Rel（路径来自 query/path 参数，先经 URL 解码）
+    check, err := filepath.Rel(resolvedRoot, target)
+    if err != nil || check == ".." || strings.HasPrefix(check, ".."+string(filepath.Separator)) {
+        http.Error(w, "预览路径必须位于当前文件夹内", http.StatusForbidden)
+    }
+    // 链接层：目标解析后再比一次（目录请求自动补 index.html）
+    if resolved, err := filepath.EvalSymlinks(target); err == nil {
+        r, relErr := filepath.Rel(resolvedRoot, resolved)
+        if relErr != nil || r == ".." || strings.HasPrefix(r, ".."+string(filepath.Separator)) {
+            http.Error(w, "预览路径不能通过符号链接离开当前文件夹", http.StatusForbidden)
+        }
+    }
+    // ... 附 CSP 头 + http.ServeContent 输出
+}</script>
+      <pre class="code-out"></pre>
+      <ul class="points">
+        <li><b>为什么独立实现</b>：HTTP 入口不可信，泄露 = 任意文件读取漏洞；绝不接受任意文件系统 root。</li>
+        <li><b>响应头</b>：CSP `default-src 'self'` 等（server.go:290）+ `Cache-Control: no-cache`。</li>
+        <li><b>测试</b>：preview_test.go:81 用 `../outside.html` 验证 403。</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ================= Tab 3: Q&A ================= -->
+  <section class="tab-pane" id="tab-qa">
+    <div class="qa-toolbar">
+      <div class="sec-title">面试问答（点击卡片翻转） <span class="en">13 + 3</span></div>
+      <button id="revealAll">全部展开</button>
+    </div>
+    <div class="qa-grid">
+
+      <div class="qa-card"><div class="inner">
+        <div class="qa-face qa-front"><span class="cat">安全</span>
+          <div class="q">为什么有了 Clean + Rel 的词法检查，还要做 EvalSymlinks？</div>
+          <div class="hint">点击翻转 ▸</div></div>
+        <div class="qa-face qa-back"><h4>参考答案</h4><ul>
+          <li>词法检查只处理字符串，防不了「物理跳转」：工作空间内可能有指向外部的符号链接。</li>
+          <li><code>root/link/secret.txt</code> 词法完全合法，实际却读到外面。</li>
+          <li>两层缺一不可：词法层挡 <code>../</code> 攻击，链接层挡 link 攻击。</li>
+          <li>代码位置：tools.go:192-210，三层组合 = Clean 归一化 + Rel 判越界 + EvalSymlinks 比真实路径。</li>
+        </ul><span class="tag2">tools.go:192-210 · changes.go:44-62</span></div>
+      </div></div>
+
+      <div class="qa-card"><div class="inner">
+        <div class="qa-face qa-front"><span class="cat">安全</span>
+          <div class="q">EvalSymlinks 检查存在 TOCTOU 竞态，怎么破？</div>
+          <div class="hint">点击翻转 ▸</div></div>
+        <div class="qa-face qa-back"><h4>参考答案</h4><ul>
+          <li>承认竞态：检查通过到真正 open/write 之间，有本地权限者可把目录替换成符号链接。</li>
+          <li>缓解①：<code>openat</code> 系系统调用 + <code>O_NOFOLLOW</code>（逐级 open，链接即失败）。</li>
+          <li>缓解②：写入后重新 EvalSymlinks 复核路径。</li>
+          <li>本项目的补救：Undo 恢复时重校验（undo.go:135）——但写入本身仍有窗口。</li>
+          <li>面试能主动指出「检查与使用分离」的窗口 = 加分。</li>
+        </ul><span class="tag2">undo.go:135 是现有防线</span></div>
+      </div></div>
+
+      <div class="qa-card"><div class="inner">
+        <div class="qa-face qa-front"><span class="cat">安全</span>
+          <div class="q">代码里 `if evalErr == nil` 才做链接检查——EvalSymlinks 失败会怎样？</div>
+          <div class="hint">点击翻转 ▸</div></div>
+        <div class="qa-face qa-back"><h4>参考答案</h4><ul>
+          <li>会<b>静默跳过</b>检查，不报错也不拒绝。</li>
+          <li>父目录不存在（新建场景）：可接受——MkdirAll 会新建，不存在即无法是链接。</li>
+          <li>目录存在但权限/系统错误：<b>隐患</b>，等于绕过第二层。</li>
+          <li>生产做法：区分 <code>os.IsNotExist</code>（放行新建）与其他错误（拒绝并报错）。</li>
+          <li>这是代码真实弱点，主动说出显得读码仔细。</li>
+        </ul><span class="tag2">tools.go:202 · changes.go:54</span></div>
+      </div></div>
+
+      <div class="qa-card"><div class="inner">
+        <div class="qa-face qa-front"><span class="cat">安全</span>
+          <div class="q">Windows 上还有哪些绕过姿势？</div>
+          <div class="hint">点击翻转 ▸</div></div>
+        <div class="qa-face qa-back"><h4>参考答案</h4><ul>
+          <li>NTFS <b>junction</b>：Go 的 EvalSymlinks 走 GetFinalPathNameByHandle，能解析 reparse point，现代 Go 基本可拦。</li>
+          <li><b>8.3 短文件名</b>（<code>C:\PROGRA~1</code>）：需确认 EvalSymlinks 是否规范化。</li>
+          <li><code>\\?\</code> 设备路径、UNC 路径、大小写（本项目 samePath 用 EqualFold 处理，store.go:134-138）。</li>
+          <li>URL 编码 <code>%2e%2e</code>：必须先解码再 Clean+Rel 校验（preview_test.go:81 有用例）。</li>
+          <li>通用原则：<b>先归一化、再校验</b>；平台差异要列测试矩阵。</li>
+        </ul><span class="tag2">store.go:134-138 · preview_test.go:81</span></div>
+      </div></div>
+
+      <div class="qa-card"><div class="inner">
+        <div class="qa-face qa-front"><span class="cat">安全</span>
+          <div class="q">为什么服务端 preview 接口要重复实现一遍路径校验，而不是复用 ResolvePath？</div>
+          <div class="hint">点击翻转 ▸</div></div>
+        <div class="qa-face qa-back"><h4>参考答案</h4><ul>
+          <li>HTTP 入口不可信：浏览器来的任何输入都不能信任，泄露出沙箱 = 任意文件读取。</li>
+          <li>previewFile 先固化 root 真实路径，再对目标做 rel + EvalSymlinks 双检查（server.go:220-275）。</li>
+          <li>可以点评：agent resolve / workspace ResolvePath / server previewFile 三处重复是坏味道，理想收敛到共享函数。</li>
+          <li>「我会重构收敛」= 加分回答。</li>
+        </ul><span class="tag2">server.go:220-275</span></div>
+      </div></div>
+
+      <div class="qa-card"><div class="inner">
+        <div class="qa-face qa-front"><span class="cat">并发</span>
+          <div class="q">UndoStore 的并发模型？多会话共享一个 store 有什么问题？</div>
+          <div class="hint">点击翻转 ▸</div></div>
+        <div class="qa-face qa-back"><h4>参考答案</h4><ul>
+          <li>sync.Mutex 保护 entries 切片与落盘（undo.go:31-33, 76-77）。</li>
+          <li>全局单例（server.go:85）被所有会话共享，注入各 Session（server.go:1435）。</li>
+          <li>问题①：UndoLast 按<b>全局时间戳</b>取最近一条，多会话交错时可能撤销别的会话的修改（只按 workspace 过滤）。</li>
+          <li>问题②：100 条上限是<b>全局</b>的，繁忙会话会把其他工作空间的条目挤掉（undo.go:88-90）。</li>
+          <li>改进方向：按会话隔离或按 workspace 分桶。</li>
+        </ul><span class="tag2">undo.go:88-90 · server.go:85</span></div>
+      </div></div>
+
+      <div class="qa-card"><div class="inner">
+        <div class="qa-face qa-front"><span class="cat">设计</span>
+          <div class="q">PreviousContent 全量存内容，大文件怎么办？</div>
+          <div class="hint">点击翻转 ▸</div></div>
+        <div class="qa-face qa-back"><h4>参考答案</h4><ul>
+          <li>全量快照：简单可靠，撤销无需 diff 重建。</li>
+          <li>代价：100 条 × 大文件会让 undo.json 迅速膨胀。</li>
+          <li>改进：超大文件只记前 N 字节 + 元信息；或增量 diff 存储；或按单条大小限制。</li>
+          <li>项目里 diff 接口（undo.go:150-176）已能算 before/after，可作增量存储基础。</li>
+        </ul><span class="tag2">undo.go:19, 150-176</span></div>
+      </div></div>
+
+      <div class="qa-card"><div class="inner">
+        <div class="qa-face qa-front"><span class="cat">设计</span>
+          <div class="q">tmp + rename 原子写有什么注意点？</div>
+          <div class="hint">点击翻转 ▸</div></div>
+        <div class="qa-face qa-back"><h4>参考答案</h4><ul>
+          <li>必须<b>同目录</b>：跨文件系统 rename 退化为 copy，不原子。</li>
+          <li>权限 0600/0644 受 umask 影响；undo.json 含旧内容建议 0600。</li>
+          <li>崩溃可能残留 <code>.tmp</code> 文件，需清理策略。</li>
+          <li>Windows：os.Rename 走 MoveFileEx（可覆盖），但目标被占用会失败。</li>
+          <li>引申：agent 用户文件写入没用原子写——Undo 已兜底，且 rename 换 inode 可能干扰 watcher/IDE。</li>
+        </ul><span class="tag2">undo.go:66-74 · store.go:239-258</span></div>
+      </div></div>
+
+      <div class="qa-card"><div class="inner">
+        <div class="qa-face qa-front"><span class="cat">设计</span>
+          <div class="q">为什么 Undo 要持久化到磁盘而不是内存？</div>
+          <div class="hint">点击翻转 ▸</div></div>
+        <div class="qa-face qa-back"><h4>参考答案</h4><ul>
+          <li>Agent 会话可能被中断、应用可能重启；只有持久化才能保证「改坏了还能撤」。</li>
+          <li>代价：每次 Record 全量写盘 → 用原子写防损坏 + 100 条上限控体积。</li>
+          <li>存储位置：llm.ConfigDir()/undo.json（undo.go:36-44）。</li>
+          <li>启动时 NewUndoStoreAt 读回内存，Mutex 保证并发安全。</li>
+        </ul><span class="tag2">undo.go:36-59</span></div>
+      </div></div>
+
+      <div class="qa-card"><div class="inner">
+        <div class="qa-face qa-front"><span class="cat">设计</span>
+          <div class="q">Plan 模式和沙箱是什么关系？</div>
+          <div class="hint">点击翻转 ▸</div></div>
+        <div class="qa-face qa-back"><h4>参考答案</h4><ul>
+          <li>沙箱 = 空间约束（<b>能不能越界</b>）；Plan 模式 = 策略约束（<b>该不该改</b>），两层正交。</li>
+          <li>Plan 下 write_file 仅允许文档扩展名：.md/.markdown/.txt/.rst/.adoc/.org（isDocPath, tools.go:37-42）。</li>
+          <li>Plan 下不暴露 spawn_subagent 与 mcp_* 工具（tools.go:84-96, 167-171）——子 Agent 可能自行改代码。</li>
+          <li>测试：planmode_test.go 三个用例覆盖「过滤工具 / 拒代码 / 放行文档」。</li>
+        </ul><span class="tag2">tools.go:37-42,149-154 · planmode_test.go</span></div>
+      </div></div>
+
+      <div class="qa-card"><div class="inner">
+        <div class="qa-face qa-front"><span class="cat">工程</span>
+          <div class="q">resolve() 和 workspace.ResolvePath 几乎一样，为什么不做成一处？</div>
+          <div class="hint">点击翻转 ▸</div></div>
+        <div class="qa-face qa-back"><h4>参考答案</h4><ul>
+          <li>历史演进 + 包依赖方向：ResolvePath 是给 undo/diff 用的公共函数，agent 的 resolve 早于它。</li>
+          <li>两处逻辑近同（tools.go:180-212 vs changes.go:37-65），改一处漏一处是隐患。</li>
+          <li>重构方向：agent 直接调 workspace.ResolvePath（返回干净绝对路径），删除重复。</li>
+          <li>面试表述：「我注意到重复，会收敛到单一入口并补测试」。</li>
+        </ul><span class="tag2">changes.go:37-65</span></div>
+      </div></div>
+
+      <div class="qa-card"><div class="inner">
+        <div class="qa-face qa-front"><span class="cat">工程</span>
+          <div class="q">这类安全代码怎么测？</div>
+          <div class="hint">点击翻转 ▸</div></div>
+        <div class="qa-face qa-back"><h4>参考答案</h4><ul>
+          <li>现有：tools_test.go:40-45 的 <code>../outside.txt</code> 被拒；undo_test.go 覆盖覆盖/新建撤销；preview_test.go:81 的 403。</li>
+          <li>补充①：os.Symlink 造指向外部的链接，专门测链接逃逸。</li>
+          <li>补充②：表驱动 payload（<code>../</code>、<code>a/../../b</code>、绝对路径、空路径、URL 编码）。</li>
+          <li>补充③：Go 原生 fuzz（testing.F）喂随机路径。</li>
+          <li>补充④：Windows junction 需 CI 跑 Windows 矩阵。</li>
+        </ul><span class="tag2">tools_test.go · undo_test.go · planmode_test.go</span></div>
+      </div></div>
+
+      <div class="qa-card"><div class="inner">
+        <div class="qa-face qa-front"><span class="cat">工程</span>
+          <div class="q">os.WriteFile 的 0644/0755 在 Windows 上有效吗？</div>
+          <div class="hint">点击翻转 ▸</div></div>
+        <div class="qa-face qa-back"><h4>参考答案</h4><ul>
+          <li>Windows 上权限位基本被忽略，主要由 NTFS ACL 控制。</li>
+          <li>若产品有 Linux 部署（服务器模式），需考虑 umask 叠加与显式 chmod。</li>
+          <li>undo.json 用 0600 是对的：内含文件旧内容，属敏感数据。</li>
+          <li>「跨平台权限差异」本身就是一个好的讨论切入点。</li>
+        </ul><span class="tag2">tools.go:260 · undo.go:70</span></div>
+      </div></div>
+
+      <div class="qa-card bonus"><div class="inner">
+        <div class="qa-face qa-front"><span class="cat">加分 ✦1</span>
+          <div class="q">为什么新建文件要退到「最近的已存在父目录」解析？</div>
+          <div class="hint">点击翻转 ▸</div></div>
+        <div class="qa-face qa-back"><h4>参考答案</h4><ul>
+          <li>EvalSymlinks 需要目标存在，而新文件本身不存在。</li>
+          <li>用 Lstat（不跟随链接）判断存在性，不存在则向上退到最近已存在祖先。</li>
+          <li>效果：write 到 <code>link_outside/new.txt</code> 也能被拦下——链接在父目录层就被识别。</li>
+          <li>若不退父目录，新建场景会直接跳过链接检查 = 漏洞。</li>
+        </ul><span class="tag2">tools.go:198-201</span></div>
+      </div></div>
+
+      <div class="qa-card bonus"><div class="inner">
+        <div class="qa-face qa-front"><span class="cat">加分 ✦2</span>
+          <div class="q">「原子写入」到底保障了什么？Agent 的 write_file 原子吗？</div>
+          <div class="hint">点击翻转 ▸</div></div>
+        <div class="qa-face qa-back"><h4>参考答案</h4><ul>
+          <li>原子写入（tmp+rename）保障的是<b>沙箱自己的状态文件</b>：undo.json、workspaces.json、MCP 配置等。</li>
+          <li>Agent 对用户文件的 write_file 用的是普通 WriteFile（tools.go:260），<b>不是</b>原子的。</li>
+          <li>理由：用户文件写入靠 Undo 兜底（旧内容已先读出）；而状态文件一旦损坏，整个撤销链就断了。</li>
+          <li>能精确区分这两者，说明真的读过实现。</li>
+        </ul><span class="tag2">undo.go:66-74 vs tools.go:260</span></div>
+      </div></div>
+
+      <div class="qa-card bonus"><div class="inner">
+        <div class="qa-face qa-front"><span class="cat">加分 ✦3</span>
+          <div class="q">纵深防御全景：如果我要攻击这个沙箱，突破口在哪？</div>
+          <div class="hint">点击翻转 ▸</div></div>
+        <div class="qa-face qa-back"><h4>参考答案</h4><ul>
+          <li>① EvalSymlinks 错误被静默跳过（权限错误时第二层失效）。</li>
+          <li>② TOCTOU：检查与写入之间的符号链接偷换窗口。</li>
+          <li>③ 并发撤销：多会话共享 store，撤销可能影响他人修改。</li>
+          <li>④ 大文件 Undo 膨胀磁盘（DoS 面）。</li>
+          <li>防御视角：先归一化再校验、openat+O_NOFOLLOW、按会话分桶、单条大小上限。</li>
+          <li>攻防一体回答 = 面试高光时刻。</li>
+        </ul><span class="tag2">攻击面 = 代码注释里的 risk 标注</span></div>
+      </div></div>
+
+    </div>
+  </section>
+
+  <footer>
+    基于 LongCat-frontend master 分支实际实现整理 · internal/workspace · internal/agent · internal/server<br>
+    速记建议：先背「五层防御」→ 再背「三个细节」→ 最后用 Q&A 卡片自测。<br>
+    <code>file-sandbox-cheatsheet.html</code>
+  </footer>
+</div>
+
+<script>
+/* ---------- 简易 Go 语法高亮 ---------- */
+(function(){
+  const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const re = /(\/\/[^\n]*|\/\*[\s\S]*?\*\/)|("(?:[^"\\\n]|\\.)*"|`(?:[^`\\]|\\.)*`)|(\b\d[\d.]*\b)|(\b(?:func|if|else|for|return|var|package|import|defer|go|struct|type|map|range|nil|true|false|switch|case|default|break|continue|select|chan|const)\b)|(\b(?:string|int|int64|uint32|byte|bool|error)\b)|(\b(?:len|make|new|append|copy|delete|cap|close|fmt|os|filepath|strings|errors|json|time)\b)|([A-Za-z_][A-Za-z0-9_]*)/g;
+
+  function highlight(code){
+    let out = '', last = 0, m;
+    while((m = re.exec(code))){
+      out += esc(code.slice(last, m.index));
+      if(m[1]){ // comment
+        const isNote = m[1].indexOf('▲') !== -1 || m[1].indexOf('考点') !== -1;
+        out += '<span class="c' + (isNote ? ' note' : '') + '">' + esc(m[1]) + '</span>';
+      } else if(m[2]){ out += '<span class="s">' + esc(m[2]) + '</span>'; }
+      else if(m[3]){ out += '<span class="n">' + esc(m[3]) + '</span>'; }
+      else if(m[4]){ out += '<span class="k">' + esc(m[4]) + '</span>'; }
+      else if(m[5]){ out += '<span class="t">' + esc(m[5]) + '</span>'; }
+      else if(m[6]){ out += '<span class="fn">' + esc(m[6]) + '</span>'; }
+      else { out += '<span class="fn">' + esc(m[7]) + '</span>'; }
+      last = re.lastIndex;
+    }
+    out += esc(code.slice(last));
+    return out;
+  }
+
+  document.querySelectorAll('.code-card').forEach(card => {
+    const src = card.querySelector('script.code-src');
+    if(!src) return;
+    card.querySelector('pre.code-out').innerHTML = highlight(src.textContent.replace(/^\n+|\s+$/g,''));
+  });
+})();
+
+/* ---------- Tab 切换 ---------- */
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('.tab-pane').forEach(p => {
+      p.classList.toggle('active', p.id === 'tab-' + btn.dataset.tab);
+    });
+  });
+});
+
+/* ---------- Q&A 翻转卡片 ---------- */
+document.querySelectorAll('.qa-card').forEach(card => {
+  card.addEventListener('click', () => card.classList.toggle('flipped'));
+});
+const revealBtn = document.getElementById('revealAll');
+revealBtn.addEventListener('click', () => {
+  const expanded = revealBtn.dataset.on === '1';
+  document.querySelectorAll('.qa-card').forEach(c => c.classList.toggle('flipped', !expanded));
+  revealBtn.dataset.on = expanded ? '' : '1';
+  revealBtn.textContent = expanded ? '全部展开' : '全部收起';
+});
+</script>
+</body>
+</html>

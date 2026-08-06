@@ -17,13 +17,14 @@ func TestSendEventSends(t *testing.T) {
 	}
 }
 
-// TestSendEventCancelled 验证上下文取消时 sendEvent 立即返回 false，
-// 而不会阻塞在 out <- 上——这正是防止生产者 goroutine 泄漏的关键。
+// TestSendEventCancelled 验证上下文取消且无人读取（无缓冲通道会阻塞发送）时，
+// sendEvent 立即走 ctx.Done() 分支返回 false，而不会阻塞在 out <- 上——
+// 这正是防止生产者 goroutine 泄漏的关键。
 func TestSendEventCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	ch := make(chan StreamEvent, 1) // 满缓冲也不应阻塞
+	ch := make(chan StreamEvent) // 无缓冲：若无 ctx 取消，out <- 会永久阻塞
 	cancel()
 	if sendEvent(ctx, ch, StreamEvent{Kind: "delta", Delta: "x"}) {
-		t.Fatal("sendEvent should return false when ctx is already cancelled")
+		t.Fatal("sendEvent should return false when ctx is already cancelled and no reader")
 	}
 }
