@@ -81,6 +81,104 @@ type ToolEvent struct {
 // ToolEventFunc receives tool lifecycle updates.
 type ToolEventFunc func(ToolEvent)
 
+// StreamEvent is a single item emitted while a turn streams. The producer
+// (runStream, running in its own goroutine) sends these into a channel that is
+// closed once the turn ends (success, error, or cancellation).
+type StreamEvent struct {
+	Kind  string    // "delta" | "tool" | "done"
+	Delta string    // set when Kind == "delta"
+	Tool  ToolEvent // set when Kind == "tool"
+	Final string    // full reply, set when Kind == "done"
+	Err   error     // non-nil on Kind == "done" indicates failure/cancellation
+}
+
+// Stream runs a user turn and streams its progress through a channel. The
+// producer runs in a dedicated goroutine so the caller can consume events
+// concurrently (e.g. flush SSE frames). Synchronous setup errors such as a
+// missing active provider are returned directly and no goroutine is started.
+func (s *Session) Stream(ctx context.Context, input string, attachments []llm.Attachment) (<-chan StreamEvent, error) {
+	if _, err := s.Manager.Active(); err != nil {
+		return nil, err
+	}
+	out := make(chan StreamEvent, 32)
+	go func() {
+		defer close(out)
+		s.runStream(ctx, input, attachments, out)
+	}()
+	return out, nil
+}
+
+// runStream executes the multi-round agent loop, pushing deltas and tool events
+// into the channel and a final "done" event before returning. The channel is
+// always closed by the caller (Stream).
+func (s *Session) runStream(ctx context.Context, input string, attachments []llm.Attachment, out chan<- StreamEvent) {
+	provider, err := s.Manager.Active()
+	if err != nil {
+		out <- StreamEvent{Kind: "done", Err: err}
+		return
+	}
+	msgs := []llm.Message{{Role: "system", Content: s.buildSystem(input)}}
+	msgs = append(msgs, s.Messages...)
+	msgs = append(msgs, llm.Message{Role: "user", Content: input, Attachments: attachments})
+
+	exec := &ToolExecutor{Workspace: s.Workspace, Skills: s.Skills, MCP: s.MCP, Undo: s.Undo, Agents: s.Agents, Manager: s.Manager, Activity: s.Activity, OrchestrationDepth: s.OrchestrationDepth}
+	onDelta := func(d string) {
+		out <- StreamEvent{Kind: "delta", Delta: d}
+	}
+	var reply string
+	for round := 0; round < 8; round++ {
+		if err := ctx.Err(); err != nil {
+			s.commitInterrupted(input, attachments, reply)
+			out <- StreamEvent{Kind: "done", Err: err}
+			return
+		}
+		result, err := llm.ChatWithTools(ctx, provider, llm.ChatOptions{Messages: msgs, Tools: exec.Definitions(), OnDelta: onDelta})
+		if err != nil {
+			if errors.Is(err, context.Canceled) {
+				s.commitInterrupted(input, attachments, reply)
+			}
+			out <- StreamEvent{Kind: "done", Err: err}
+			return
+		}
+		reply += result.Content
+		if len(result.ToolCalls) == 0 {
+			break
+		}
+		// Preserve the assistant tool-call turn, then append one tool result per call.
+		assistant := llm.Message{Role: "assistant", Content: result.Content, ToolCalls: result.ToolCalls}
+		msgs = append(msgs, assistant)
+		for index, call := range result.ToolCalls {
+			if err := ctx.Err(); err != nil {
+				s.commitInterrupted(input, attachments, reply)
+				out <- StreamEvent{Kind: "done", Err: err}
+				return
+			}
+			callID := call.ID
+			if callID == "" {
+				callID = fmt.Sprintf("tool-%d-%d", round, index)
+			}
+			out <- StreamEvent{Kind: "tool", Tool: ToolEvent{ID: callID, Name: call.Function.Name, Arguments: call.Function.Arguments, Status: "running", Round: round + 1}}
+			toolOut, callErr := exec.ExecuteContext(ctx, call.Function.Name, call.Function.Arguments)
+			status := "success"
+			if callErr != nil {
+				toolOut = "工具执行失败: " + callErr.Error()
+				status = "error"
+			}
+			out <- StreamEvent{Kind: "tool", Tool: ToolEvent{ID: callID, Name: call.Function.Name, Arguments: call.Function.Arguments, Result: toolOut, Status: status, Round: round + 1}}
+			msgs = append(msgs, llm.Message{Role: "tool", Content: toolOut, ToolCallID: call.ID, Name: call.Function.Name})
+		}
+	}
+	s.Messages = append(s.Messages,
+		llm.Message{Role: "user", Content: input, Attachments: attachments},
+		llm.Message{Role: "assistant", Content: reply},
+	)
+	// 轻量会话：只保留最近 20 条，避免无限膨胀。
+	if len(s.Messages) > 20 {
+		s.Messages = s.Messages[len(s.Messages)-20:]
+	}
+	out <- StreamEvent{Kind: "done", Final: reply}
+}
+
 // modeDesc 模式到提示词片段的映射。
 var modeDesc = map[string]string{
 	// 前端开发
@@ -219,71 +317,34 @@ func (s *Session) AskWithEvents(ctx context.Context, input string, onDelta llm.S
 }
 
 // AskWithAttachments sends a user turn with optional multimodal attachments.
-// The attachment metadata is persisted with the user message so restored
-// sessions can render the same message cards.
+// It is a callback-style convenience wrapper over Stream: it consumes the
+// goroutine-driven event channel and invokes the supplied callbacks. The
+// attachment metadata is persisted with the user message so restored sessions
+// can render the same message cards.
 func (s *Session) AskWithAttachments(ctx context.Context, input string, attachments []llm.Attachment, onDelta llm.StreamFunc, onTool ToolEventFunc) (string, error) {
-	provider, err := s.Manager.Active()
+	ch, err := s.Stream(ctx, input, attachments)
 	if err != nil {
 		return "", err
 	}
-	msgs := []llm.Message{{Role: "system", Content: s.buildSystem(input)}}
-	msgs = append(msgs, s.Messages...)
-	msgs = append(msgs, llm.Message{Role: "user", Content: input, Attachments: attachments})
-
-	exec := &ToolExecutor{Workspace: s.Workspace, Skills: s.Skills, MCP: s.MCP, Undo: s.Undo, Agents: s.Agents, Manager: s.Manager, Activity: s.Activity, OrchestrationDepth: s.OrchestrationDepth}
-	var reply string
-	for round := 0; round < 8; round++ {
-		if err := ctx.Err(); err != nil {
-			s.commitInterrupted(input, attachments, reply)
-			return reply, err
-		}
-		result, err := llm.ChatWithTools(ctx, provider, llm.ChatOptions{Messages: msgs, Tools: exec.Definitions(), OnDelta: onDelta})
-		if err != nil {
-			if errors.Is(err, context.Canceled) {
-				s.commitInterrupted(input, attachments, reply)
+	var final string
+	for ev := range ch {
+		switch ev.Kind {
+		case "delta":
+			if onDelta != nil {
+				onDelta(ev.Delta)
 			}
-			return reply, err
-		}
-		reply += result.Content
-		if len(result.ToolCalls) == 0 {
-			break
-		}
-		// Preserve the assistant tool-call turn, then append one tool result per call.
-		assistant := llm.Message{Role: "assistant", Content: result.Content, ToolCalls: result.ToolCalls}
-		msgs = append(msgs, assistant)
-		for index, call := range result.ToolCalls {
-			if err := ctx.Err(); err != nil {
-				s.commitInterrupted(input, attachments, reply)
-				return reply, err
-			}
-			callID := call.ID
-			if callID == "" {
-				callID = fmt.Sprintf("tool-%d-%d", round, index)
-			}
+		case "tool":
 			if onTool != nil {
-				onTool(ToolEvent{ID: callID, Name: call.Function.Name, Arguments: call.Function.Arguments, Status: "running", Round: round + 1})
+				onTool(ev.Tool)
 			}
-			out, callErr := exec.ExecuteContext(ctx, call.Function.Name, call.Function.Arguments)
-			status := "success"
-			if callErr != nil {
-				out = "工具执行失败: " + callErr.Error()
-				status = "error"
+		case "done":
+			final = ev.Final
+			if ev.Err != nil {
+				return final, ev.Err
 			}
-			if onTool != nil {
-				onTool(ToolEvent{ID: callID, Name: call.Function.Name, Arguments: call.Function.Arguments, Result: out, Status: status, Round: round + 1})
-			}
-			msgs = append(msgs, llm.Message{Role: "tool", Content: out, ToolCallID: call.ID, Name: call.Function.Name})
 		}
 	}
-	s.Messages = append(s.Messages,
-		llm.Message{Role: "user", Content: input, Attachments: attachments},
-		llm.Message{Role: "assistant", Content: reply},
-	)
-	// 轻量会话：只保留最近 20 条，避免无限膨胀。
-	if len(s.Messages) > 20 {
-		s.Messages = s.Messages[len(s.Messages)-20:]
-	}
-	return reply, nil
+	return final, nil
 }
 
 func (s *Session) commitInterrupted(input string, attachments []llm.Attachment, reply string) {

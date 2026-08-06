@@ -786,26 +786,37 @@ func (a *api) chat(w http.ResponseWriter, r *http.Request) {
 		a.cancel = nil
 		a.cancelMu.Unlock()
 	}()
-	_, err := a.session.AskWithAttachments(ctx, in.Message, in.Attachments, func(delta string) {
-		send("delta", delta)
-	}, func(event agent.ToolEvent) {
-		send("tool", event)
-	})
+	// 消费 agent 的 goroutine+channel 流式事件，逐条 flush 为 SSE 帧。
+	evCh, err := a.session.Stream(ctx, in.Message, in.Attachments)
 	if err != nil {
-		if errors.Is(err, context.Canceled) {
-			_ = a.saveActiveLocked()
-			send("stopped", true)
+		send("error", err.Error())
+		return
+	}
+	for ev := range evCh {
+		switch ev.Kind {
+		case "delta":
+			send("delta", ev.Delta)
+		case "tool":
+			send("tool", ev.Tool)
+		case "done":
+			if ev.Err != nil {
+				if errors.Is(ev.Err, context.Canceled) {
+					_ = a.saveActiveLocked()
+					send("stopped", true)
+					send("done", true)
+					return
+				}
+				send("error", ev.Err.Error())
+				return
+			}
+			if err := a.saveActiveLocked(); err != nil {
+				send("error", err.Error())
+				return
+			}
 			send("done", true)
 			return
 		}
-		send("error", err.Error())
-		return
 	}
-	if err := a.saveActiveLocked(); err != nil {
-		send("error", err.Error())
-		return
-	}
-	send("done", true)
 }
 
 func validateAttachments(attachments []llm.Attachment) error {

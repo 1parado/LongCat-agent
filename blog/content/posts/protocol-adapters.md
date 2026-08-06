@@ -49,6 +49,8 @@ NDJSON line ...     ┘
 
 `scanSSE` 只负责逐行取出 data payload，具体 adapter 再解析自己的事件类型。这个层次划分让流式 UI 不需要知道“当前是一条 `response.output_text.delta` 还是一段 `content_block_delta`”。
 
+注意这里“回调给 Agent/server”发生在 LLM 边界：协议函数通过 `StreamFunc onDelta` 把增量交回调用方。到了 Agent 边界，这些增量不再被直接传给 UI，而是由 `runStream` 的 goroutine 包成 `StreamEvent` 推入一个 channel，最终由 Web UI 的 `chat` 处理器 `range` 消费并 flush 成 SSE——LLM 层的 `StreamFunc` 本身保持不变。
+
 ## Tool call 的语义比 envelope 更重要
 
 四种协议的工具响应名字不一样：`tool_calls`、`tool_use`、`function_call`、Ollama 的 `message.tool_calls`。适配器把它们都变成 `ChatResult{Content, ToolCalls}`，然后交给 Agent loop。

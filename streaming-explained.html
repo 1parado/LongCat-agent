@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>流式输出是怎么实现的 · LongCat-frontend</title>
+<style>
+  :root {
+    --bg: #f7f8fa;
+    --panel: #ffffff;
+    --ink: #1f2430;
+    --muted: #6b7280;
+    --line: #e5e7eb;
+    --blue: #2563eb;
+    --blue-soft: #eff4ff;
+    --green: #059669;
+    --green-soft: #ecfdf5;
+    --amber: #d97706;
+    --amber-soft: #fffbeb;
+    --red: #dc2626;
+    --purple: #7c3aed;
+    --shadow: 0 1px 3px rgba(0,0,0,.06), 0 8px 24px rgba(0,0,0,.04);
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.7;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 48px 24px 96px; }
+  header.hero {
+    border-radius: 18px;
+    padding: 36px 32px;
+    background: linear-gradient(135deg, #eff4ff 0%, #ecfdf5 100%);
+    border: 1px solid var(--line);
+    box-shadow: var(--shadow);
+  }
+  .hero h1 { margin: 0 0 8px; font-size: 26px; letter-spacing: -0.5px; }
+  .hero p { margin: 0; color: var(--muted); font-size: 15px; }
+  .hero .tag { display:inline-block; margin-top:14px; padding:4px 12px; border-radius:999px; background:#fff; border:1px solid var(--line); font-size:13px; color:var(--blue); font-weight:600; }
+  h2 { font-size: 20px; margin: 56px 0 16px; padding-left: 12px; border-left: 4px solid var(--blue); }
+  h3 { font-size: 16px; margin: 28px 0 10px; color: var(--ink); }
+  p.lead { color: var(--muted); }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 24px; box-shadow: var(--shadow); }
+  .card-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  @media (max-width: 720px){ .card-grid { grid-template-columns: 1fr; } }
+  .layer { border-radius: 12px; padding: 18px; border: 1px solid var(--line); }
+  .layer.llm { background: var(--amber-soft); border-color: #fde68a; }
+  .layer.agent { background: var(--blue-soft); border-color: #bfdbfe; }
+  .layer.server { background: var(--green-soft); border-color: #a7f3d0; }
+  .layer .num { font-size: 12px; font-weight: 700; color: var(--muted); }
+  .layer h4 { margin: 6px 0 6px; font-size: 15px; }
+  .layer .role { font-size: 13px; color: var(--muted); }
+  .layer code { font-family: var(--mono); font-size: 12px; background: rgba(0,0,0,.04); padding: 1px 5px; border-radius: 5px; }
+  .analogy { font-size: 15px; }
+  .analogy b { color: var(--purple); }
+
+  /* pipeline diagram */
+  .pipe { display: flex; align-items: stretch; gap: 0; margin: 8px 0 4px; flex-wrap: nowrap; }
+  .node { flex: 1; text-align: center; padding: 14px 10px; border-radius: 12px; font-size: 13px; position: relative; border: 1px solid var(--line); background: #fff; }
+  .node .t { font-weight: 700; font-size: 13px; }
+  .node .s { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  .node.llm { background: var(--amber-soft); }
+  .node.agent { background: var(--blue-soft); }
+  .node.server { background: var(--green-soft); }
+  .node.browser { background: #f3f4f6; }
+  .arrow { align-self: center; font-size: 22px; color: var(--muted); padding: 0 6px; }
+
+  /* animated channel */
+  .anim { margin-top: 20px; }
+  .belt { position: relative; height: 64px; border-radius: 12px; background: repeating-linear-gradient(90deg,#eef2ff,#eef2ff 16px,#e3ebff 16px,#e3ebff 32px); border: 1px solid #c7d6ff; overflow: hidden; }
+  .belt .label { position:absolute; left:10px; top:6px; font-size:12px; color:var(--blue); font-weight:700; z-index:3; }
+  .drop { position: absolute; top: 22px; width: 30px; height: 22px; border-radius: 6px; display:flex; align-items:center; justify-content:center; font-size:11px; color:#fff; font-weight:700; }
+  .drop.delta { background: var(--blue); }
+  .drop.tool { background: var(--amber); }
+  .drop.done { background: var(--green); }
+  .controls { margin-top: 14px; display:flex; gap:10px; align-items:center; flex-wrap: wrap; }
+  button { font: inherit; border: 1px solid var(--line); background: #fff; padding: 8px 16px; border-radius: 9px; cursor: pointer; color: var(--ink); font-weight: 600; }
+  button.primary { background: var(--blue); color: #fff; border-color: var(--blue); }
+  button:active { transform: translateY(1px); }
+  .stage { font-family: var(--mono); font-size: 12.5px; color: var(--muted); margin-top: 10px; min-height: 20px; }
+  .stage b { color: var(--ink); }
+
+  /* code chain */
+  .chain { list-style: none; padding: 0; margin: 0; counter-reset: step; }
+  .chain li { position: relative; padding: 14px 16px 14px 52px; border: 1px solid var(--line); border-radius: 12px; margin-bottom: 12px; background: #fff; }
+  .chain li::before { counter-increment: step; content: counter(step); position: absolute; left: 14px; top: 14px; width: 26px; height: 26px; border-radius: 50%; background: var(--blue); color:#fff; font-weight: 700; font-size: 13px; display:flex; align-items:center; justify-content:center; }
+  .chain li .loc { font-family: var(--mono); font-size: 12px; color: var(--blue); }
+  .chain li code.snip { display:block; margin-top:6px; font-family: var(--mono); font-size: 12.5px; background: #f8fafc; border:1px solid var(--line); border-radius:8px; padding:8px 10px; color: var(--ink); white-space: pre-wrap; }
+  .chain li .who { font-size: 12px; color: var(--muted); }
+
+  table.cmp { width: 100%; border-collapse: collapse; font-size: 14px; }
+  table.cmp th, table.cmp td { text-align: left; padding: 12px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  table.cmp th { background: #f9fafb; font-size: 13px; color: var(--muted); }
+  table.cmp td code { font-family: var(--mono); font-size:12px; background:rgba(0,0,0,.04); padding:1px 5px; border-radius:5px; }
+
+  footer { margin-top: 64px; color: var(--muted); font-size: 13px; text-align: center; }
+  a { color: var(--blue); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <h1>流式输出是怎么实现的？</h1>
+    <p>LongCat-frontend · 用 <b>goroutine + channel</b> 把模型的"逐字吐字"实时送到浏览器</p>
+    <span class="tag">agent.go · server.go · protocols.go</span>
+  </header>
+
+  <h2>① 一句话理解</h2>
+  <div class="panel analogy">
+    把一次回答想象成<b>工厂流水线</b>：
+    <ul style="margin:10px 0 0;">
+      <li><b>大模型（LLM）</b> = 源头的水龙头，一边生成一边滴水。</li>
+      <li><b>Agent 层</b> = 搬水工，开一个<b>传送带（channel）</b>，边接水边往上传。</li>
+      <li><b>Server 层</b> = 你家的水龙头，在传送带另一头接水、立刻显示。</li>
+    </ul>
+    这次重构，就是给"搬水工"配了<b>一条传送带</b>——它和生产、消费两件事解耦，所以能"一边生成、一边显示"。
+  </div>
+
+  <h2>② 四层结构总览</h2>
+  <div class="panel">
+    <div class="pipe">
+      <div class="node llm"><div class="t">LLM 供应商</div><div class="s">OpenAI / Claude<br>流式 SSE</div></div>
+      <div class="arrow">→</div>
+      <div class="node llm"><div class="t">LLM 层</div><div class="s">scanSSE<br>onDelta 回调</div></div>
+      <div class="arrow">→</div>
+      <div class="node agent"><div class="t">Agent 层</div><div class="s">runStream<br>goroutine+channel</div></div>
+      <div class="arrow">→</div>
+      <div class="node server"><div class="t">Server 层</div><div class="s">chat 处理器<br>SSE flush</div></div>
+      <div class="arrow">→</div>
+      <div class="node browser"><div class="t">浏览器</div><div class="s">Web UI<br>逐字显示</div></div>
+    </div>
+
+    <div class="card-grid" style="margin-top:18px;">
+      <div class="layer llm">
+        <div class="num">LLM 层 · 未改动</div>
+        <h4>水龙头出水</h4>
+        <div class="role">供应商返回 SSE，<code>scanSSE</code> 边读边解析，每解出一段就回调 <code>onDelta</code>。仍是<b>回调风格</b>。</div>
+      </div>
+      <div class="layer agent">
+        <div class="num">Agent 层 · 本次重构核心</div>
+        <h4>搬水工 + 传送带</h4>
+        <div class="role"><code>Stream()</code> 建 channel 并起 <code>goroutine</code> 跑 <code>runStream</code>；每拿到一段就 <code>out &lt;- StreamEvent</code>。</div>
+      </div>
+      <div class="layer server">
+        <div class="num">Server 层 · 消费者</div>
+        <h4>你的水龙头</h4>
+        <div class="role"><code>for ev := range evCh</code> 一直接，<code>send()</code> 写帧后立刻 <code>Flush()</code> 给浏览器。</div>
+      </div>
+    </div>
+  </div>
+
+  <h2>③ 看一遍"传送带"动起来</h2>
+  <div class="panel">
+    <div class="belt" id="belt"><span class="label">chan StreamEvent（缓冲 32）</span></div>
+    <div class="controls">
+      <button class="primary" id="play">▶ 播放一次回答</button>
+      <button id="reset">重置</button>
+      <span style="font-size:13px;color:var(--muted);">事件种类：<span style="color:var(--blue);font-weight:700;">delta</span> 文本增量 · <span style="color:var(--amber);font-weight:700;">tool</span> 工具调用 · <span style="color:var(--green);font-weight:700;">done</span> 结束</span>
+    </div>
+    <div class="stage" id="stage">点击「播放」，看搬水工如何把事件一个个放上传送带。</div>
+  </div>
+
+  <h2>④ 真实代码调用链</h2>
+  <p class="lead">每一步都对应仓库里的真实文件与行号。流程图右侧的"谁来做"标了生产者 / 消费者。</p>
+  <ol class="chain">
+    <li>
+      <span class="loc">server.go:790</span>
+      <div class="who">消费者（Server）发起：开传送带</div>
+      <code class="snip">evCh, err := a.session.Stream(ctx, in.Message, in.Attachments)</code>
+    </li>
+    <li>
+      <span class="loc">agent.go:103-108</span>
+      <div class="who">生产者（Agent）建传送带 + 派搬水工上岗</div>
+      <code class="snip">out := make(chan StreamEvent, 32)
+go func() {
+    defer close(out)          // 干完活，关传送带
+    s.runStream(ctx, input, attachments, out)
+}()
+return out, nil               // 立刻交还，不等模型回答</code>
+    </li>
+    <li>
+      <span class="loc">agent.go:114 runStream</span>
+      <div class="who">生产者：搬水工开始跑 ≤8 轮循环</div>
+      <code class="snip">onDelta := func(d string) {
+    out <- StreamEvent{Kind: "delta", Delta: d}   // 往上放
+}</code>
+    </li>
+    <li>
+      <span class="loc">agent.go:135</span>
+      <div class="who">生产者：去问大模型，把 onDelta 接上</div>
+      <code class="snip">result, err := llm.ChatWithTools(ctx, provider,
+    llm.ChatOptions{Messages: msgs, Tools: exec.Definitions(), OnDelta: onDelta})</code>
+    </li>
+    <li>
+      <span class="loc">protocols.go:405-418</span>
+      <div class="who">LLM 层：水龙头出水（仍是最初的回调）</div>
+      <code class="snip">err = scanSSE(resp.Body, func(payload string) bool {
+    ...
+    onDelta(chunk.Choices[0].Delta.Content)   // 一段文本 → 回调
+    return true
+})</code>
+    </li>
+    <li>
+      <span class="loc">agent.go:160 / 167 / 179</span>
+      <div class="who">生产者：工具事件 / 结束事件也放上带</div>
+      <code class="snip">out <- StreamEvent{Kind: "tool", Tool: ...}      // running
+out <- StreamEvent{Kind: "tool", Tool: ...}      // success/error
+out <- StreamEvent{Kind: "done", Final: reply}   // 全部结束</code>
+    </li>
+    <li>
+      <span class="loc">server.go:795-801</span>
+      <div class="who">消费者：在另一头接水并 flush</div>
+      <code class="snip">for ev := range evCh {
+    switch ev.Kind {
+    case "delta": send("delta", ev.Delta)   // 立刻 Flush 给浏览器
+    case "tool":  send("tool", ev.Tool)
+    case "done":  ...                        // 保存会话 / 处理取消
+    }
+}</code>
+    </li>
+  </ol>
+
+  <h2>⑤ 为什么用 goroutine + channel，而不是纯回调？</h2>
+  <div class="panel">
+    <table class="cmp">
+      <thead><tr><th>对比点</th><th>旧做法（纯回调）</th><th>新做法（goroutine + channel）</th></tr></thead>
+      <tbody>
+        <tr><td>解耦</td><td><code>onDelta</code> 直接打到 UI</td><td>生产(跑循环)与消费(刷UI)解耦，可"边生成边显示"</td></tr>
+        <tr><td>响应时机</td><td>要等整条链路跑起来才显示</td><td><code>Stream</code> 立刻返回 channel，马上能收事件</td></tr>
+        <tr><td>取消</td><td>得层层 <code>return</code> 退出</td><td>关掉 channel，<code>for range</code> 自然结束，干净收尾</td></tr>
+        <tr><td>模式一致</td><td>—</td><td>与项目里 <code>watcher.Subscribe()</code> 返回 channel 的模式统一</td></tr>
+      </tbody>
+    </table>
+    <p style="margin:16px 0 0; font-size:14px; color:var(--muted);">
+      一句话：<b>channel 就是那条传送带</b>，把"模型慢慢吐字"和"浏览器慢慢显示"这两件事拆开。
+    </p>
+  </div>
+
+  <footer>
+    本页由 WorkBuddy 生成 · 对应代码：<code>internal/agent/agent.go</code> · <code>internal/server/server.go</code> · <code>internal/llm/protocols.go</code>
+  </footer>
+
+</div>
+
+<script>
+  const belt = document.getElementById('belt');
+  const stage = document.getElementById('stage');
+  const playBtn = document.getElementById('play');
+  const resetBtn = document.getElementById('reset');
+  let drops = [], timer = null, running = false;
+
+  // 模拟一次回答产生的事件序列
+  const events = [
+    {k:'delta', t:'我', note:'runStream 收到第 1 段文本 → 放上传送带'},
+    {k:'delta', t:'先', note:'第 2 段文本'},
+    {k:'delta', t:'查看', note:'第 3 段文本'},
+    {k:'tool',  t:'T', note:'工具调用 running：list_directory'},
+    {k:'tool',  t:'T', note:'工具调用 success：返回目录内容'},
+    {k:'delta', t:'目', note:'第 4 段文本（基于工具结果）'},
+    {k:'delta', t:'录里', note:'第 5 段文本'},
+    {k:'done',  t:'✓', note:'全部结束 → done(Final=完整回复)，随后 close(channel)'},
+  ];
+
+  function clearDrops(){ drops.forEach(d=>d.el.remove()); drops=[]; }
+
+  function spawn(ev, i){
+    const el = document.createElement('div');
+    el.className = 'drop ' + ev.k;
+    el.textContent = ev.t;
+    belt.appendChild(el);
+    const start = belt.clientWidth + 10;
+    el.style.left = start + 'px';
+    const obj = {el, x:start};
+    drops.push(obj);
+    // 动画：从右向左移动
+    const dur = 5200, t0 = performance.now();
+    function step(now){
+      const p = Math.min(1, (now - t0)/dur);
+      obj.x = start - p*(start + 40);
+      el.style.left = obj.x + 'px';
+      if(p < 1){ requestAnimationFrame(step); }
+      else { el.remove(); drops = drops.filter(d=>d!==obj); }
+    }
+    requestAnimationFrame(step);
+    stage.innerHTML = '<b>事件 ' + (i+1) + '/' + events.length + '</b> · ' + ev.note;
+  }
+
+  function play(){
+    if(running) return;
+    running = true; playBtn.disabled = true; clearDrops();
+    let i = 0;
+    stage.textContent = '搬水工上岗，开始往传送带上放事件…';
+    timer = setInterval(()=>{
+      if(i >= events.length){ clearInterval(timer); running=false; playBtn.disabled=false; return; }
+      spawn(events[i], i); i++;
+    }, 1200);
+  }
+  function reset(){ if(timer) clearInterval(timer); running=false; playBtn.disabled=false; clearDrops(); stage.textContent='点击「播放」，看搬水工如何把事件一个个放上传送带。'; }
+
+  playBtn.addEventListener('click', play);
+  resetBtn.addEventListener('click', reset);
+</script>
+</body>
+</html>

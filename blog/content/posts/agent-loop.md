@@ -12,23 +12,30 @@ tags: ['agent', 'loop', 'streaming']
 
 ## 循环的最小单元
 
-`internal/agent/agent.go` 的 `AskWithAttachments` 把一次用户 turn 组织成一个最多 8 轮的循环。伪代码可以压缩成这样：
+`internal/agent/agent.go` 里真正执行循环的是 `runStream`：它在一个**独立的 goroutine** 中运行，把一次用户 turn 组织成最多 8 轮，并把过程中的 token 增量、工具事件、结束事件推入一个 `StreamEvent` channel。`AskWithAttachments` 则是消费这个 channel 的薄封装（把 `delta`/`tool` 事件转交回调），TUI 与子代理编排无需感知 channel 的存在。
+
+伪代码对应 `runStream` 的核心：
 
 ```go
-msgs := system + history + userMessage
+out := make(chan StreamEvent, 32)
+go func() {
+    defer close(out)
+    // 同一份多轮循环
+    for round := 0; round < 8; round++ {
+        result := llm.ChatWithTools(ctx, provider, opts) // OnDelta 把 delta 推入 out
+        if len(result.ToolCalls) == 0 {
+            break // 模型给出了最终文本
+        }
 
-for round := 0; round < 8; round++ {
-    result := llm.ChatWithTools(ctx, provider, msgs, tools)
-    if len(result.ToolCalls) == 0 {
-        break // 模型给出了最终文本
+        msgs = append(msgs, assistantToolCall(result.ToolCalls))
+        for _, call := range result.ToolCalls {
+            out <- StreamEvent{Kind: "tool", Tool: running(call)}
+            out <- StreamEvent{Kind: "tool", Tool: finished(call, executor.ExecuteContext(...))}
+            msgs = append(msgs, toolResult(call.ID, out))
+        }
     }
-
-    msgs = append(msgs, assistantToolCall(result.ToolCalls))
-    for _, call := range result.ToolCalls {
-        out := executor.ExecuteContext(ctx, call.Name, call.Arguments)
-        msgs = append(msgs, toolResult(call.ID, out))
-    }
-}
+    out <- StreamEvent{Kind: "done", Final: reply}
+}()
 ```
 
 每一轮都有相同的节奏：
@@ -51,17 +58,17 @@ Anthropic 和 Responses API 的外层形状不同，但语义相同：先记录�
 
 ## 流式不是循环的替代品
 
-`onDelta` 只负责把当前模型响应的文本增量推到 UI；`ToolEvent` 则负责报告工具的生命周期：
+循环在 goroutine 里跑，流式则是它和调用方之间的**通道（channel）**。每一块产出都被封装成一个 `StreamEvent`（`Kind` 为 `delta`、`tool` 或 `done`），推入 channel 后由消费方逐条取走——Web UI 的 `chat` 处理器就是 `for ev := range evCh { ... }` 这样边收边 flush 成 SSE 帧。`onDelta` 不再直接触达 UI，而是先把文本增量包成 `StreamEvent{Kind: "delta"}` 推入 channel：
 
 ```text
-delta: "我先查看..."
-tool:  { name: "list_directory", status: "running" }
+delta: "我先查看..."        ┐
+tool:  { name: "list_directory", status: "running" }   ├── runStream goroutine ──→ chan StreamEvent ──→ 消费方 flush SSE
 tool:  { name: "list_directory", status: "success", result: "..." }
-delta: "目录里有..."
-done
+delta: "目录里有..."        ┘
+done                       （channel 关闭）
 ```
 
-这两个事件不能混成一件事。文本增量是回答的视觉反馈，工具事件是系统行为的审计线索。前者让等待变得可接受，后者让“Agent 正在改什么”变得可理解。
+这两个事件不能混成一件事。文本增量是回答的视觉反馈，工具事件是系统行为的审计线索。前者让等待变得可接受，后者让“Agent 正在改什么”变得可理解。用 channel 而非直接回调的好处是：生产（goroutine 跑 loop）和消费（刷 SSE、TUI 渲染）解耦，调用方可以并发地边收边处理，也更容易在取消时通过关闭 channel 干净地收尾。
 
 ## 三个停止条件
 
@@ -73,6 +80,6 @@ done
 
 ## 阅读入口
 
-- `internal/agent/agent.go`：`AskWithAttachments`、`buildSystem`。
+- `internal/agent/agent.go`：`Stream` / `runStream`（goroutine + channel 流式核心）、`AskWithAttachments`（消费 channel 的回调封装）、`buildSystem`。
 - `internal/agent/agent.go`：`commitInterrupted`，看取消时如何保留部分状态。
-- `internal/server/server.go`：`handleChat`，看 `delta`、`tool`、`done` 如何发往 Web UI。
+- `internal/server/server.go`：`chat` 处理器，看它如何用 `for ev := range evCh` 把 `delta`、`tool`、`done` 发往 Web UI。
