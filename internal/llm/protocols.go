@@ -323,29 +323,70 @@ func ollamaMessages(msgs []Message) []map[string]any {
 	return out
 }
 
+// postJSON 发起一次 POST 请求，并在出错时按 DefaultRetry 自动重试。
+// 重试覆盖：网络错误，以及 429 / 500 / 502 / 503 / 504 等可恢复状态码；
+// 重试前会先经过出向限流器（waitRateLimit）以从源头降低被供应商限流的概率。
+// 注意：流式（SSE）响应一旦开始读取便不再重试，仅对连接/首字节前的失败重试。
 func postJSON(ctx context.Context, url string, headers map[string]string, body any) (*http.Response, error) {
 	data, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(data))
-	if err != nil {
-		return nil, err
+	rc := DefaultRetry
+	for attempt := 0; attempt < rc.MaxAttempts; attempt++ {
+		if err := waitRateLimit(ctx); err != nil {
+			return nil, err
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(data))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		for k, v := range headers {
+			req.Header.Set(k, v)
+		}
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			// 网络错误（连接重置、超时、DNS 等）：可重试。
+			if attempt == rc.MaxAttempts-1 {
+				return nil, err
+			}
+			if w := sleepWithCtx(ctx, backoff(rc, attempt, nil)); w != nil {
+				return nil, w
+			}
+			continue
+		}
+		if resp.StatusCode >= 400 {
+			if retryableStatus(resp.StatusCode) && attempt < rc.MaxAttempts-1 {
+				resp.Body.Close()
+				if w := sleepWithCtx(ctx, backoff(rc, attempt, resp)); w != nil {
+					return nil, w
+				}
+				continue
+			}
+			// 不可重试的客户端/服务端错误：按原行为返回。
+			defer resp.Body.Close()
+			msg, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+			return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(msg)))
+		}
+		return resp, nil
 	}
-	req.Header.Set("Content-Type", "application/json")
-	for k, v := range headers {
-		req.Header.Set(k, v)
+	return nil, fmt.Errorf("请求失败：已重试 %d 次仍未成功", rc.MaxAttempts)
+}
+
+// sleepWithCtx 在 ctx 取消前等待 d 时长；若被取消则返回 ctx.Err()。
+func sleepWithCtx(ctx context.Context, d time.Duration) error {
+	if d <= 0 {
+		return nil
 	}
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return nil, err
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-t.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
 	}
-	if resp.StatusCode >= 400 {
-		defer resp.Body.Close()
-		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(msg)))
-	}
-	return resp, nil
 }
 
 // scanSSE 逐行读取 SSE 流，把每个 data: 载荷交给 handle；

@@ -5,7 +5,7 @@ date: 2026-07-24
 slug: protocol-adapters
 order: 8
 eyebrow: 'LLM / PROTOCOLS'
-tags: ['llm', 'protocol', 'streaming']
+tags: ['llm', 'protocol', 'streaming', 'resilience']
 ---
 
 LongCat-frontend 支持 OpenAI Chat Completions、OpenAI Responses、Anthropic Messages 和 Ollama。真正有价值的不是“列表很长”，而是上层 Agent 不需要知道本轮请求发给谁。
@@ -56,6 +56,45 @@ NDJSON line ...     ┘
 四种协议的工具响应名字不一样：`tool_calls`、`tool_use`、`function_call`、Ollama 的 `message.tool_calls`。适配器把它们都变成 `ChatResult{Content, ToolCalls}`，然后交给 Agent loop。
 
 协议函数**不会执行工具**。`ChatWithTools` 的注释直接写明：tool calls 返回给调用方执行。这样 LLM adapter 可以被测试为纯粹的消息转换器，真实权限仍集中在 `ToolExecutor`。
+
+## 边界还要扛得住失败：自动重试与出向限流
+
+适配器把“外部世界的不整齐”收拢成统一形状，但外部世界还会**直接拒绝服务**：业务高峰期大模型 API 经常返回 429 Too Many Requests，或 500/502/503/504。这些错误不该直接抛给用户，而应在边界内被消化。
+
+所有协议与流式调用都汇聚到 `internal/llm/protocols.go` 唯一的 HTTP 出口 `postJSON`，所以重试与限流只需在这一点落地，即可覆盖 OpenAI Chat / Responses、Anthropic、Ollama 四套协议与 SSE 流，上层 Agent 与 UI 完全无感。
+
+### 自动重试（Retry）
+
+`postJSON` 在出错时按 `DefaultRetry`（`internal/llm/resilience.go`）重试：
+
+- **触发条件**：HTTP 429 / 500 / 502 / 503 / 504，以及网络错误（连接重置、超时、DNS 失败）。
+- **退避策略**：默认最多 3 次尝试（1 首发 + 2 重试），指数退避 500ms 起、上限 8s，并叠加**全抖动**避免大量请求同时重试造成惊群。
+- **尊重服务端信号**：若响应携带 `Retry-After`（秒或 HTTP-date），优先采用该等待时长（受 `MaxRetryAfter = 30s` 约束）。
+- **可取消**：退避等待期间若 `ctx` 被取消（如用户点了停止），立即返回 `ctx.Err()`。
+- **流式边界**：流式（SSE）响应一旦开始读取便不再重试，仅对连接建立 / 首字节前的失败重试，避免重复发射已下发的 token。
+
+```text
+postJSON(ctx, url, headers, body)
+   └─ waitRateLimit(ctx)              # 出向限流：取一个令牌
+   └─ httpClient.Do(req)
+        ├─ 网络错误 / 429 / 5xx  ──→ 退避(sleepWithCtx) ──→ 重试（最多 MaxAttempts-1 次）
+        └─ 2xx                  ──→ 返回 *http.Response（交给上层解析）
+```
+
+### 出向限流（Rate limiting）
+
+重试能兜住瞬时失败，但更优的策略是**从源头降低被限流的概率**。`internal/llm/resilience.go` 提供一个零依赖的令牌桶 `Limiter`，在每次请求发起前先取令牌：
+
+- 默认 **10 请求/秒**（突发容量同为 10），`SetRateLimit(rps)` 可按所用供应商的 RPM/TPM 配额调整；`SetRateLimit(0)` 关闭限流。
+- 限流发生在 **client-side（出向 LLM 请求）**，不与本地 Web UI 的入向流量混淆。
+
+```go
+import "LongCat-frontend/internal/llm"
+
+llm.SetRateLimit(3) // 例如供应商限额 3 QPS
+```
+
+把“重试消化失败 + 限流抑制失败”放在 LLM 边界，是适配器哲学的延伸：让上层只面对稳定的语义，把外部世界的不整齐与不稳定都挡在边界之内。
 
 ## 兼容性优先于完美抽象
 

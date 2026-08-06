@@ -1,0 +1,858 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Goroutine + Channel 流式输出</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap');
+
+  :root {
+    --bg-deep: #060a14;
+    --bg-panel: #0d1321;
+    --bg-card: #111a2e;
+    --border: #1e2d4a;
+    --channel: #00d4aa;
+    --channel-glow: rgba(0, 212, 170, 0.15);
+    --token: #ff6b9d;
+    --token-glow: rgba(255, 107, 157, 0.2);
+    --system: #ffd93d;
+    --text: #d4deef;
+    --text-dim: #6b7a99;
+    --font-mono: 'JetBrains Mono', monospace;
+    --font-sans: 'Inter', sans-serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: var(--font-sans);
+    background: var(--bg-deep);
+    color: var(--text);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Header */
+  header {
+    padding: 2rem 2rem 1rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-panel);
+  }
+  header h1 {
+    font-family: var(--font-mono);
+    font-size: 1.25rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+  header h1 span { color: var(--channel); }
+  header p {
+    font-size: 0.85rem;
+    color: var(--text-dim);
+    margin-top: 0.5rem;
+    font-family: var(--font-mono);
+  }
+
+  /* Main Layout */
+  .container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+    min-height: calc(100vh - 80px);
+  }
+  @media (max-width: 900px) {
+    .container { grid-template-columns: 1fr; }
+  }
+
+  /* Pipeline Section */
+  .pipeline-section {
+    padding: 2rem;
+    border-right: 1px solid var(--border);
+    position: relative;
+  }
+
+  .pipeline-title {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 2rem;
+  }
+
+  /* Pipeline Stages */
+  .pipeline {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    position: relative;
+  }
+
+  .stage {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.25rem 1.5rem;
+    position: relative;
+    transition: border-color 0.3s, box-shadow 0.3s;
+  }
+  .stage.active {
+    border-color: var(--channel);
+    box-shadow: 0 0 20px var(--channel-glow), inset 0 0 20px rgba(0, 212, 170, 0.03);
+  }
+
+  .stage-label {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    margin-bottom: 0.75rem;
+  }
+
+  .stage-content {
+    font-family: var(--font-mono);
+    font-size: 0.9rem;
+    font-weight: 500;
+    min-height: 2.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .stage-content .placeholder {
+    color: var(--text-dim);
+    font-style: italic;
+    font-size: 0.8rem;
+  }
+
+  /* Goroutine badge */
+  .goroutine-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    background: rgba(255, 217, 61, 0.1);
+    border: 1px solid rgba(255, 217, 61, 0.25);
+    color: var(--system);
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 0.25rem 0.55rem;
+    border-radius: 5px;
+    letter-spacing: 0.05em;
+  }
+  .goroutine-badge::before {
+    content: '';
+    width: 6px; height: 6px;
+    background: var(--system);
+    border-radius: 50%;
+    animation: pulse-goroutine 1.5s ease-in-out infinite;
+  }
+  @keyframes pulse-goroutine {
+    0%, 100% { opacity: 0.4; transform: scale(1); }
+    50% { opacity: 1; transform: scale(1.3); }
+  }
+
+  /* Channel visualization */
+  .channel-pipe {
+    display: flex;
+    align-items: center;
+    padding: 0.75rem 0;
+    position: relative;
+  }
+  .channel-line {
+    flex: 1;
+    height: 3px;
+    background: linear-gradient(90deg, var(--border), var(--channel), var(--border));
+    border-radius: 2px;
+    position: relative;
+    overflow: visible;
+  }
+  .channel-line.flowing::after {
+    content: '';
+    position: absolute;
+    top: -3px; left: 0;
+    width: 12px; height: 9px;
+    background: var(--channel);
+    border-radius: 4px;
+    box-shadow: 0 0 8px var(--channel), 0 0 16px var(--channel);
+    animation: flow-through 1s linear infinite;
+  }
+  @keyframes flow-through {
+    0% { left: 0%; opacity: 0; }
+    10% { opacity: 1; }
+    90% { opacity: 1; }
+    100% { left: calc(100% - 12px); opacity: 0; }
+  }
+
+  .channel-label {
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    font-weight: 600;
+    color: var(--channel);
+    padding: 0 0.75rem;
+    white-space: nowrap;
+    letter-spacing: 0.08em;
+  }
+
+  .channel-buffer {
+    display: flex;
+    gap: 3px;
+    padding: 0 0.75rem;
+  }
+  .buffer-slot {
+    width: 8px; height: 8px;
+    border-radius: 2px;
+    background: var(--border);
+    transition: background 0.3s, box-shadow 0.3s;
+  }
+  .buffer-slot.filled {
+    background: var(--channel);
+    box-shadow: 0 0 6px var(--channel);
+  }
+
+  /* Token output */
+  .token-output {
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    line-height: 1.8;
+    color: var(--text);
+    min-height: 6rem;
+    max-height: 200px;
+    overflow-y: auto;
+    word-break: break-all;
+  }
+  .token-output::-webkit-scrollbar { width: 4px; }
+  .token-output::-webkit-scrollbar-track { background: transparent; }
+  .token-output::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .token {
+    display: inline;
+    color: var(--token);
+    opacity: 0;
+    animation: token-appear 0.15s ease-out forwards;
+  }
+  @keyframes token-appear {
+    from { opacity: 0; transform: translateY(3px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Controls */
+  .controls {
+    display: flex;
+    gap: 0.75rem;
+    margin-top: 2rem;
+    flex-wrap: wrap;
+  }
+  .btn {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.6rem 1.2rem;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    color: var(--text);
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    letter-spacing: 0.03em;
+  }
+  .btn:hover {
+    border-color: var(--channel);
+    color: var(--channel);
+    background: var(--channel-glow);
+  }
+  .btn.primary {
+    background: var(--channel);
+    color: var(--bg-deep);
+    border-color: var(--channel);
+  }
+  .btn.primary:hover {
+    background: #00eab8;
+    box-shadow: 0 0 15px var(--channel-glow);
+  }
+  .btn.danger:hover {
+    border-color: var(--token);
+    color: var(--token);
+    background: var(--token-glow);
+  }
+
+  /* Status bar */
+  .status-bar {
+    margin-top: 1.5rem;
+    padding: 0.75rem 1rem;
+    background: var(--bg-deep);
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    display: flex;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+  }
+  .status-item {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .status-item .dot {
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    background: var(--text-dim);
+  }
+  .status-item.active .dot { background: var(--channel); box-shadow: 0 0 4px var(--channel); }
+  .status-item .value { color: var(--channel); font-weight: 600; }
+
+  /* Code Section */
+  .code-section {
+    padding: 2rem;
+    background: var(--bg-panel);
+    overflow-y: auto;
+    max-height: calc(100vh - 80px);
+  }
+  .code-section::-webkit-scrollbar { width: 4px; }
+  .code-section::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .code-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+  }
+  .code-header h3 {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+  .lang-tag {
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    color: var(--system);
+    background: rgba(255, 217, 61, 0.1);
+    border: 1px solid rgba(255, 217, 61, 0.2);
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+  }
+
+  pre {
+    background: var(--bg-deep);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.25rem;
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    line-height: 1.7;
+    overflow-x: auto;
+    counter-reset: line;
+  }
+  pre::-webkit-scrollbar { height: 4px; }
+  pre::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .line {
+    display: block;
+    counter-increment: line;
+    padding: 0.05rem 0;
+    transition: background 0.3s;
+  }
+  .line::before {
+    content: counter(line);
+    display: inline-block;
+    width: 2rem;
+    margin-right: 1rem;
+    color: var(--text-dim);
+    font-size: 0.7rem;
+    opacity: 0.5;
+    user-select: none;
+  }
+  .line.highlight {
+    background: rgba(0, 212, 170, 0.08);
+    border-left: 2px solid var(--channel);
+    margin-left: -1.25rem;
+    padding-left: calc(1.25rem - 2px);
+  }
+
+  /* Syntax highlighting */
+  .kw { color: #c792ea; }
+  .fn { color: #82aaff; }
+  .str { color: #c3e88d; }
+  .num { color: #f78c6c; }
+  .cm { color: #546e7a; font-style: italic; }
+  .ch { color: var(--channel); font-weight: 600; }
+  .tp { color: #ffcb6b; }
+  .op { color: #89ddff; }
+
+  /* Flow steps */
+  .flow-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-top: 2rem;
+  }
+  .flow-step {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 0.65rem 0.85rem;
+    background: var(--bg-deep);
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    transition: all 0.3s;
+  }
+  .flow-step.active {
+    border-color: var(--channel);
+    background: var(--channel-glow);
+  }
+  .flow-step .num {
+    width: 20px; height: 20px;
+    border-radius: 4px;
+    background: var(--border);
+    color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 0.65rem;
+    flex-shrink: 0;
+    transition: all 0.3s;
+  }
+  .flow-step.active .num {
+    background: var(--channel);
+    color: var(--bg-deep);
+  }
+  .flow-step .desc { color: var(--text-dim); line-height: 1.4; }
+  .flow-step.active .desc { color: var(--text); }
+
+  /* Responsive */
+  @media (max-width: 900px) {
+    .pipeline-section { border-right: none; border-bottom: 1px solid var(--border); }
+    .code-section { max-height: none; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4"/>
+    </svg>
+    <span>Goroutine</span> + <span style="color:var(--channel)">Channel</span> 流式输出原理
+  </h1>
+  <p>实时可视化 Go 并发模型：Token 生成 → Channel 传输 → 流式消费</p>
+</header>
+
+<div class="container">
+
+  <!-- Left: Pipeline Visualization -->
+  <div class="pipeline-section">
+    <div class="pipeline-title">▸ 数据流管道</div>
+
+    <div class="pipeline">
+
+      <!-- Stage 1: Goroutine generates tokens -->
+      <div class="stage" id="stage-goroutine">
+        <div class="stage-label">
+          <span class="goroutine-badge">GOROUTINE</span>
+          Token 生成器
+        </div>
+        <div class="stage-content" id="goroutine-content">
+          <span class="placeholder">等待启动...</span>
+        </div>
+      </div>
+
+      <!-- Channel pipe -->
+      <div class="channel-pipe">
+        <div class="channel-label">▸ Send</div>
+        <div class="channel-line" id="channel-line"></div>
+        <div class="channel-buffer" id="channel-buffer">
+          <div class="buffer-slot"></div>
+          <div class="buffer-slot"></div>
+          <div class="buffer-slot"></div>
+        </div>
+        <div class="channel-label">Recv ▸</div>
+      </div>
+
+      <!-- Stage 2: Channel -->
+      <div class="stage" id="stage-channel">
+        <div class="stage-label">
+          <span style="color:var(--channel)">make(chan string, 3)</span>
+          带缓冲 Channel
+        </div>
+        <div class="stage-content" id="channel-content">
+          <span class="placeholder">缓冲区空闲</span>
+        </div>
+      </div>
+
+      <!-- Stage 3: Consumer displays -->
+      <div class="stage" id="stage-consumer">
+        <div class="stage-label">
+          <span style="color:var(--token)">for token := range ch</span>
+          消费者 / UI 渲染
+        </div>
+        <div class="token-output" id="token-output"></div>
+      </div>
+
+    </div>
+
+    <!-- Controls -->
+    <div class="controls">
+      <button class="btn primary" onclick="startStreaming()">▶ 开始流式输出</button>
+      <button class="btn" onclick="startSlow()">🐢 慢速演示</button>
+      <button class="btn danger" onclick="stopStreaming()">⏹ 停止</button>
+      <button class="btn" onclick="clearOutput()">🗑 清空</button>
+    </div>
+
+    <!-- Status -->
+    <div class="status-bar">
+      <div class="status-item" id="status-running">
+        <span class="dot"></span>
+        运行中: <span class="value" id="running-status">否</span>
+      </div>
+      <div class="status-item">
+        <span class="dot"></span>
+        Goroutines: <span class="value" id="goroutine-count">0</span>
+      </div>
+      <div class="status-item">
+        <span class="dot"></span>
+        Channel 缓冲: <span class="value" id="buffer-count">0</span> / 3
+      </div>
+      <div class="status-item">
+        <span class="dot"></span>
+        Tokens 已输出: <span class="value" id="token-count">0</span>
+      </div>
+    </div>
+
+    <!-- Flow steps explanation -->
+    <div class="flow-steps">
+      <div class="flow-step" id="step-1">
+        <span class="num">1</span>
+        <span class="desc"><code>go func()</code> 启动独立 Goroutine，开始生成 Token</span>
+      </div>
+      <div class="flow-step" id="step-2">
+        <span class="num">2</span>
+        <span class="desc">每个 Token 通过 <code>ch &lt;- token</code> 发送到 Channel（缓冲区满时阻塞）</span>
+      </div>
+      <div class="flow-step" id="step-3">
+        <span class="num">3</span>
+        <span class="desc"><code>for token := range ch</code> 主 Goroutine 逐个接收 Token</span>
+      </div>
+      <div class="flow-step" id="step-4">
+        <span class="num">4</span>
+        <span class="desc">Token 逐个渲染到界面 → 形成"流式输出"效果</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right: Go Code -->
+  <div class="code-section">
+    <div class="code-header">
+      <h3>▸ Go 源码实现</h3>
+      <span class="lang-tag">Go 1.21+</span>
+    </div>
+    <pre><code><span class="line"><span class="kw">package</span> main</span>
+<span class="line"></span>
+<span class="line"><span class="kw">import</span> (</span>
+<span class="line">    <span class="str">"fmt"</span></span>
+<span class="line">    <span class="str">"time"</span></span>
+<span class="line">)</span>
+<span class="line"></span>
+<span class="line"><span class="cm">// Agent 流式响应：Goroutine + Channel</span></span>
+<span class="line"><span class="kw">func</span> <span class="fn">streamAgent</span>(prompt <span class="tp">string</span>, ch <span class="kw">chan</span>&lt;- <span class="tp">string</span>) {</span>
+<span class="line">    <span class="cm">// 模拟 LLM 逐 token 生成</span></span>
+<span class="line">    tokens := []<span class="tp">string</span>{<span class="str">"你"</span>, <span class="str">"好"</span>, <span class="str">"，"</span>, <span class="str">"我"</span>, <span class="str">"是"</span>, <span class="str">" "</span>, <span class="str">"AI "</span>, <span class="str">"助"</span>, <span class="str">"手"</span>, <span class="str">"。"</span>}</span>
+<span class="line"></span>
+<span class="line">    <span class="kw">for</span> _, token := <span class="kw">range</span> tokens {</span>
+<span class="line">        time.<span class="fn">Sleep</span>(<span class="num">200</span> * time.Millisecond) <span class="cm">// 模拟生成延迟</span></span>
+<span class="line">        ch &lt;- token  <span class="cm">// 发送到 Channel（缓冲区满时阻塞）</span></span>
+<span class="line">    }</span>
+<span class="line">    <span class="kw">close</span>(ch) <span class="cm">// 所有 token 发送完毕，关闭 channel</span></span>
+<span class="line">}</span>
+<span class="line"></span>
+<span class="line"><span class="kw">func</span> <span class="fn">main</span>() {</span>
+<span class="line">    <span class="cm">// 创建带缓冲的 Channel（容量 3）</span></span>
+<span class="line">    ch := <span class="kw">make</span>(<span class="kw">chan</span> <span class="tp">string</span>, <span class="num">3</span>)</span>
+<span class="line"></span>
+<span class="line">    <span class="cm">// 启动 Goroutine 开始生成 Token</span></span>
+<span class="line">    <span class="kw">go</span> <span class="fn">streamAgent</span>(<span class="str">"你好"</span>, ch)</span>
+<span class="line"></span>
+<span class="line">    <span class="cm">// 主 Goroutine 消费 Token（流式输出）</span></span>
+<span class="line">    <span class="kw">for</span> token := <span class="kw">range</span> ch {</span>
+<span class="line">        fmt.<span class="fn">Print</span>(token) <span class="cm">// 逐个打印 → 流式效果</span></span>
+<span class="line">    }</span>
+<span class="line">    fmt.<span class="fn">Println</span>()</span>
+<span class="line">}</span></code></pre>
+
+    <div style="margin-top:1.5rem;padding:1rem;background:var(--bg-deep);border-radius:8px;border:1px solid var(--border);">
+      <div style="font-family:var(--font-mono);font-size:0.7rem;color:var(--text-dim);margin-bottom:0.5rem;">▸ 执行结果</div>
+      <div style="font-family:var(--font-mono);font-size:0.85rem;color:var(--channel);line-height:1.6;" id="terminal-output">
+        <span style="color:var(--text-dim)">$ go run main.go</span><br>
+        <span style="color:var(--text-dim)">等待执行...</span>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  // State
+  let running = false;
+  let channelBuffer = [];
+  const BUFFER_SIZE = 3;
+  let tokenCount = 0;
+  let goroutineCount = 0;
+  let streamInterval = null;
+  let consumeInterval = null;
+
+  const tokens = ['你', '好', '，', '我', '是', ' ', 'AI ', '助', '手', '。', '很高', '兴', '认', '识', '你', '！'];
+  let tokenIndex = 0;
+
+  // DOM refs
+  const goroutineContent = document.getElementById('goroutine-content');
+  const channelContent = document.getElementById('channel-content');
+  const tokenOutput = document.getElementById('token-output');
+  const channelLine = document.getElementById('channel-line');
+  const bufferSlots = document.querySelectorAll('.buffer-slot');
+  const runningStatus = document.getElementById('running-status');
+  const goroutineCountEl = document.getElementById('goroutine-count');
+  const bufferCountEl = document.getElementById('buffer-count');
+  const tokenCountEl = document.getElementById('token-count');
+  const terminalOutput = document.getElementById('terminal-output');
+  const statusRunning = document.getElementById('status-running');
+
+  // Update status
+  function updateStatus() {
+    runningStatus.textContent = running ? '是' : '否';
+    statusRunning.classList.toggle('active', running);
+    goroutineCountEl.textContent = goroutineCount;
+    bufferCountEl.textContent = channelBuffer.length;
+    tokenCountEl.textContent = tokenCount;
+  }
+
+  // Highlight step
+  function highlightStep(stepNum) {
+    for (let i = 1; i <= 4; i++) {
+      document.getElementById('step-' + i).classList.toggle('active', i === stepNum);
+    }
+  }
+
+  // Highlight code line
+  function highlightCodeLine(lineNum) {
+    document.querySelectorAll('.line').forEach(l => l.classList.remove('highlight'));
+    const line = document.querySelector(`.line:nth-child(${lineNum})`);
+    if (line) line.classList.add('highlight');
+  }
+
+  // Update buffer visualization
+  function updateBufferVisual() {
+    bufferSlots.forEach((slot, i) => {
+      slot.classList.toggle('filled', i < channelBuffer.length);
+    });
+  }
+
+  // Goroutine: generate token
+  function goroutineGenerate(speed = 300) {
+    if (!running) return;
+
+    highlightStep(1);
+    highlightCodeLine(12);
+
+    if (tokenIndex >= tokens.length) {
+      // All tokens generated, close channel
+      highlightCodeLine(15);
+      goroutineContent.innerHTML = '<span style="color:var(--channel)">✓ 生成完毕，close(ch)</span>';
+      channelLine.classList.remove('flowing');
+      // Signal channel is closed
+      channelBuffer.push('__CLOSED__');
+      updateStatus();
+      return;
+    }
+
+    const token = tokens[tokenIndex];
+    goroutineContent.innerHTML = `生成: <span style="color:var(--token);font-weight:700">"${token}"</span>`;
+
+    // Send to channel (simulate ch <- token)
+    setTimeout(() => {
+      if (!running) return;
+      highlightStep(2);
+      highlightCodeLine(13);
+
+      // Animate flow through channel
+      channelLine.classList.add('flowing');
+
+      // Add to buffer
+      channelBuffer.push(token);
+      updateBufferVisual();
+      updateStatus();
+
+      // Update channel content display
+      channelContent.innerHTML = channelBuffer
+        .filter(t => t !== '__CLOSED__')
+        .map(t => `<span style="color:var(--channel);margin-right:2px">${t}</span>`)
+        .join('') || '<span class="placeholder">缓冲区空闲</span>';
+
+      tokenIndex++;
+
+      // Continue generating
+      streamInterval = setTimeout(() => goroutineGenerate(speed), speed);
+    }, speed * 0.4);
+  }
+
+  // Consumer: receive token
+  function consumeToken(speed = 300) {
+    if (!running) return;
+
+    highlightStep(3);
+    highlightCodeLine(22);
+
+    if (channelBuffer.length === 0) {
+      // Check if closed
+      if (channelBuffer.includes('__CLOSED__') || tokenIndex >= tokens.length) {
+        finishStreaming();
+        return;
+      }
+      // Wait for more tokens
+      consumeInterval = setTimeout(() => consumeToken(speed), 100);
+      return;
+    }
+
+    const token = channelBuffer.shift();
+    if (token === '__CLOSED__') {
+      finishStreaming();
+      return;
+    }
+
+    updateBufferVisual();
+
+    // Display token
+    highlightStep(4);
+    const span = document.createElement('span');
+    span.className = 'token';
+    span.textContent = token;
+    tokenOutput.appendChild(span);
+    tokenOutput.scrollTop = tokenOutput.scrollHeight;
+    tokenCount++;
+
+    // Terminal output
+    const termSpan = document.createElement('span');
+    termSpan.style.color = 'var(--channel)';
+    termSpan.textContent = token;
+    terminalOutput.appendChild(termSpan);
+
+    channelLine.classList.remove('flowing');
+    updateStatus();
+
+    // Continue consuming
+    consumeInterval = setTimeout(() => consumeToken(speed), speed);
+  }
+
+  // Start streaming
+  function startStreaming(speed = 300) {
+    if (running) return;
+    running = true;
+    channelBuffer = [];
+    tokenIndex = 0;
+    tokenCount = 0;
+    goroutineCount = 1;
+
+    tokenOutput.innerHTML = '';
+    terminalOutput.innerHTML = '<span style="color:var(--text-dim)">$ go run main.go</span><br>';
+
+    document.getElementById('stage-goroutine').classList.add('active');
+    document.getElementById('stage-channel').classList.add('active');
+    document.getElementById('stage-consumer').classList.add('active');
+
+    updateStatus();
+
+    // Start goroutine (producer)
+    goroutineGenerate(speed);
+
+    // Start consumer
+    setTimeout(() => consumeToken(speed), speed * 0.5);
+  }
+
+  function startSlow() {
+    startStreaming(800);
+  }
+
+  // Stop
+  function stopStreaming() {
+    running = false;
+    clearTimeout(streamInterval);
+    clearTimeout(consumeInterval);
+    channelLine.classList.remove('flowing');
+    goroutineCount = 0;
+
+    document.getElementById('stage-goroutine').classList.remove('active');
+    document.getElementById('stage-channel').classList.remove('active');
+    document.getElementById('stage-consumer').classList.remove('active');
+
+    for (let i = 1; i <= 4; i++) {
+      document.getElementById('step-' + i).classList.remove('active');
+    }
+    document.querySelectorAll('.line').forEach(l => l.classList.remove('highlight'));
+
+    goroutineContent.innerHTML = '<span class="placeholder">已停止</span>';
+    channelContent.innerHTML = '<span class="placeholder">缓冲区空闲</span>';
+    channelBuffer = [];
+    updateBufferVisual();
+    updateStatus();
+  }
+
+  // Finish
+  function finishStreaming() {
+    running = false;
+    goroutineCount = 0;
+    clearTimeout(streamInterval);
+    clearTimeout(consumeInterval);
+    channelLine.classList.remove('flowing');
+
+    document.getElementById('stage-goroutine').classList.remove('active');
+    document.getElementById('stage-channel').classList.remove('active');
+    document.getElementById('stage-consumer').classList.remove('active');
+
+    for (let i = 1; i <= 4; i++) {
+      document.getElementById('step-' + i).classList.remove('active');
+    }
+
+    goroutineContent.innerHTML = '<span style="color:var(--channel)">✓ 完成</span>';
+    channelContent.innerHTML = '<span class="placeholder">缓冲区空闲</span>';
+    channelBuffer = [];
+    updateBufferVisual();
+    updateStatus();
+
+    // Terminal prompt
+    const prompt = document.createElement('div');
+    prompt.style.cssText = 'font-family:var(--font-mono);font-size:0.75rem;color:var(--text-dim);margin-top:0.5rem;';
+    prompt.textContent = '$ ✓ 流式输出完成';
+    terminalOutput.appendChild(prompt);
+  }
+
+  // Clear
+  function clearOutput() {
+    stopStreaming();
+    tokenOutput.innerHTML = '';
+    terminalOutput.innerHTML = '<span style="color:var(--text-dim)">$ go run main.go</span><br><span style="color:var(--text-dim)">等待执行...</span>';
+    tokenCount = 0;
+    updateStatus();
+  }
+
+  // Init
+  updateStatus();
+</script>
+
+</body>
+</html>
