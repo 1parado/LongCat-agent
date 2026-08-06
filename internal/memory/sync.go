@@ -83,9 +83,11 @@ func (s *Store) SetRepo(url string) error {
 		if err := os.MkdirAll(s.root, 0o755); err != nil {
 			return err
 		}
-		if _, err := runGit(s.root, "init", "-b", branch); err != nil {
+		if _, err := runGit(s.root, "init"); err != nil {
 			return err
 		}
+		// 显式设分支名，兼容未配置 init.defaultBranch 的环境（init -b 可能被忽略）。
+		_, _ = runGit(s.root, "branch", "-M", branch)
 		// 初始提交：记忆目录可能已存在内容（long-term 等）。
 		_, _ = runGit(s.root, "add", "-A")
 		_, _ = runGit(s.root, "commit", "-m", "memory: init")
