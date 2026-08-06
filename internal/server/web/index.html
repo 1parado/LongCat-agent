@@ -597,6 +597,7 @@ html[data-wallpaper="1"] .composer{background:color-mix(in srgb,var(--bg-input) 
     <button class="icon-btn" id="btnWallpaper" data-i18n-title="wallpaper" title="背景">▧</button>
     <button class="icon-btn" id="btnPreviewToggle" data-i18n-title="preview" title="预览">▤</button>
     <button class="icon-btn" id="btnSkillsView" data-i18n-title="skillsMarket" title="Skills 市场">◆</button>
+    <button class="icon-btn" id="btnMemory" title="记忆">🧠</button>
   </div>
 
   <div class="chat-area" id="chatArea">
@@ -843,6 +844,51 @@ html[data-wallpaper="1"] .composer{background:color-mix(in srgb,var(--bg-input) 
     <section class="control-section">
       <div class="control-section-head"><h3 data-i18n="changesSection">工作区变更</h3><span class="grow"></span><button class="btn" id="btnActivityUndo" data-i18n="undoLast">↶ 撤销</button></div>
       <div id="changeRows"></div><pre class="control-diff" id="activityDiff"></pre>
+    </section>
+  </div>
+</div>
+
+<!-- ========== Memory Manager ========== -->
+<div class="overlay" id="memoryOverlay">
+  <div class="modal control-modal">
+    <div class="modal-head">
+      <h2>记忆</h2>
+      <button class="icon-btn" onclick="closeMemory()" title="关闭">✕</button>
+    </div>
+    <div class="control-kicker">长期记忆（用户目录）与每日工作区记忆（.longcat/memory）· 对话结束自动沉淀</div>
+
+    <section class="control-section">
+      <div class="control-section-head"><h3>云同步（git）</h3><span class="grow"></span>
+        <span id="memorySyncStatus" class="control-status">—</span></div>
+      <div class="control-actions">
+        <input id="memoryRepo" class="form-input" placeholder="https://github.com/you/longcat-memory.git" style="min-width:240px">
+        <button class="btn" id="btnMemorySetRepo">设置仓库</button>
+        <button class="btn btn-primary" id="btnMemoryPush">↑ 推送</button>
+        <button class="btn" id="btnMemoryPull">↓ 拉取</button>
+      </div>
+      <div class="wallpaper-hint" id="memorySyncMsg">记忆保存在本地；填写仓库地址后点「设置仓库」，再手动推送 / 拉取。全程使用 git CLI，不依赖 gh。</div>
+    </section>
+
+    <section class="control-section">
+      <div class="control-section-head"><h3>记忆条目</h3><span class="grow"></span>
+        <button class="btn" id="btnMemoryNew">＋ 新建</button>
+        <button class="btn" id="btnMemoryRefresh">刷新</button></div>
+      <div id="memoryRows"></div>
+    </section>
+
+    <section class="control-section" id="memoryEditorSection" style="display:none">
+      <div class="control-section-head"><h3 id="memoryEditorTitle">编辑记忆</h3><span class="grow"></span>
+        <button class="btn btn-primary" id="btnMemorySave">保存</button>
+        <button class="btn btn-danger" id="btnMemoryDelete">删除</button>
+        <button class="btn" id="btnMemoryCancel">取消</button></div>
+      <div class="control-actions" style="margin-bottom:8px">
+        <select id="memoryScope" class="form-select">
+          <option value="workspace">工作区（当前项目 .longcat/memory）</option>
+          <option value="longterm">长期（用户目录）</option>
+        </select>
+        <input id="memoryName" class="form-input" placeholder="文件名，如 2026-08-06 或 profile" style="min-width:180px">
+      </div>
+      <textarea id="memoryContent" class="form-input" style="width:100%;min-height:220px;font:12px/1.5 var(--font-mono);white-space:pre-wrap"></textarea>
     </section>
   </div>
 </div>
@@ -2006,6 +2052,110 @@ $('leftResize').style.display=sidebarCollapsed?'none':'';
 previewOn=localStorage.getItem('previewOpen')==='true';
 $('rightPreview').classList.toggle('open',previewOn);
 $('rightResize').style.display=previewOn?'':'none';
+
+// ---- 记忆管理 ----
+let memoryEditing = null;
+function openMemory(){ closeMainPanes(); $('memoryOverlay').classList.add('open'); loadMemory(); loadMemorySync(); }
+function closeMemory(){ $('memoryOverlay').classList.remove('open'); hideMemoryEditor(); }
+function hideMemoryEditor(){ memoryEditing=null; $('memoryEditorSection').style.display='none'; $('memoryContent').value=''; $('memoryName').value=''; }
+function currentWs(){ try{ return (state&&state.workspace&&state.workspace.path)?state.workspace.path:''; }catch(e){ return ''; } }
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+async function loadMemory(){
+  try{
+    const ws=encodeURIComponent(currentWs());
+    const r=await fetch('/api/memory?workspace='+ws);
+    if(!r.ok){ toast('加载记忆失败'); return; }
+    const d=await r.json(); const rows=d.entries||[]; const box=$('memoryRows');
+    if(!rows.length){ box.innerHTML='<div class="control-empty">还没有记忆。对话结束会自动沉淀，或点「新建」手动添加。</div>'; return; }
+    rows.sort((a,b)=>(b.updated||0)-(a.updated||0)); box.innerHTML='';
+    for(const e of rows){
+      const row=document.createElement('div'); row.className='signal-row';
+      const label=e.scope==='longterm'?'长期':'工作区';
+      row.innerHTML='<span class="signal-rail ok"></span><div class="signal-main"><span class="signal-title">'+escapeHtml(e.name)+'</span><span class="signal-meta">'+label+'</span></div>';
+      row.style.cursor='pointer'; row.onclick=()=>openMemoryEntry(e.scope,e.name);
+      box.appendChild(row);
+    }
+  }catch(e){ toast(t('errorPrefix')+String(e)); }
+}
+async function openMemoryEntry(scope,name){
+  try{
+    const q=new URLSearchParams({scope,workspace:currentWs(),name});
+    const r=await fetch('/api/memory/read?'+q.toString());
+    if(!r.ok){ toast('读取失败'); return; }
+    const d=await r.json();
+    memoryEditing={scope,name};
+    $('memoryScope').value=scope; $('memoryName').value=name; $('memoryContent').value=d.content||'';
+    $('memoryEditorSection').style.display=''; $('memoryEditorTitle').textContent='编辑：'+name;
+  }catch(e){ toast(t('errorPrefix')+String(e)); }
+}
+function newMemory(){
+  memoryEditing=null;
+  $('memoryScope').value=currentWs()?'workspace':'longterm';
+  $('memoryName').value=''; $('memoryContent').value='';
+  $('memoryEditorSection').style.display=''; $('memoryEditorTitle').textContent='新建记忆'; $('memoryName').focus();
+}
+async function saveMemoryEntry(){
+  const scope=$('memoryScope').value; const name=$('memoryName').value.trim(); const content=$('memoryContent').value;
+  if(!name){ toast('请填写文件名'); return; }
+  const body=JSON.stringify({scope,workspace:currentWs(),name,content});
+  try{
+    const r=await fetch('/api/memory',{method:memoryEditing?'PUT':'POST',headers:{'Content-Type':'application/json'},body});
+    if(!r.ok){ const d=await r.json().catch(()=>({})); toast(d.error||'保存失败'); return; }
+    toast('已保存'); hideMemoryEditor(); loadMemory();
+  }catch(e){ toast(t('errorPrefix')+String(e)); }
+}
+async function deleteMemoryEntry(){
+  if(!memoryEditing){ toast('没有正在编辑的记忆'); return; }
+  const q=new URLSearchParams({scope:memoryEditing.scope,workspace:currentWs(),name:memoryEditing.name});
+  try{
+    const r=await fetch('/api/memory?'+q.toString(),{method:'DELETE'});
+    if(!r.ok){ const d=await r.json().catch(()=>({})); toast(d.error||'删除失败'); return; }
+    toast('已删除'); hideMemoryEditor(); loadMemory();
+  }catch(e){ toast(t('errorPrefix')+String(e)); }
+}
+async function loadMemorySync(){
+  try{
+    const r=await fetch('/api/memory/sync/status');
+    if(!r.ok) return;
+    const s=await r.json(); const el=$('memorySyncStatus');
+    el.textContent=s.message||(s.is_repo?'已初始化':'未初始化');
+    el.className='control-status '+(s.has_remote?'ok':(s.is_repo?'warn':''));
+    if(s.repo_url) $('memoryRepo').value=s.repo_url;
+  }catch(e){}
+}
+async function setMemoryRepo(){
+  const url=$('memoryRepo').value.trim();
+  try{
+    const r=await fetch('/api/memory/sync/repo',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({repo_url:url})});
+    if(!r.ok){ const d=await r.json().catch(()=>({})); toast(d.error||'设置失败'); return; }
+    toast('仓库已设置'); loadMemorySync();
+  }catch(e){ toast(t('errorPrefix')+String(e)); }
+}
+async function memorySyncPush(){
+  try{
+    const r=await fetch('/api/memory/sync/push',{method:'POST'});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok){ toast(d.error||'推送失败'); return; }
+    toast('已推送：'+(d.message||'')); loadMemorySync();
+  }catch(e){ toast(t('errorPrefix')+String(e)); }
+}
+async function memorySyncPull(){
+  try{
+    const r=await fetch('/api/memory/sync/pull',{method:'POST'});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok){ toast(d.error||'拉取失败'); return; }
+    toast('已拉取：'+(d.message||'')); loadMemorySync();
+  }catch(e){ toast(t('errorPrefix')+String(e)); }
+}
+if($('btnMemory'))$('btnMemory').addEventListener('click',openMemory);
+if($('btnMemoryNew'))$('btnMemoryNew').addEventListener('click',newMemory);
+if($('btnMemoryRefresh'))$('btnMemoryRefresh').addEventListener('click',loadMemory);
+if($('btnMemorySave'))$('btnMemorySave').addEventListener('click',saveMemoryEntry);
+if($('btnMemoryDelete'))$('btnMemoryDelete').addEventListener('click',deleteMemoryEntry);
+if($('btnMemoryCancel'))$('btnMemoryCancel').addEventListener('click',hideMemoryEditor);
+if($('btnMemorySetRepo'))$('btnMemorySetRepo').addEventListener('click',setMemoryRepo);
+if($('btnMemoryPush'))$('btnMemoryPush').addEventListener('click',memorySyncPush);
+if($('btnMemoryPull'))$('btnMemoryPull').addEventListener('click',memorySyncPull);
 
 applyI18n();refresh();
 
