@@ -12,6 +12,7 @@ import (
 	"LongCat-frontend/internal/frontend"
 	"LongCat-frontend/internal/llm"
 	"LongCat-frontend/internal/mcp"
+	"LongCat-frontend/internal/memory"
 	"LongCat-frontend/internal/skills"
 	"LongCat-frontend/internal/workspace"
 )
@@ -64,6 +65,7 @@ type Session struct {
 	Activity           *ActivityTracker
 	OrchestrationDepth int
 	Undo               *workspace.UndoStore
+	Memory             *memory.Store
 	DefinitionOverride string
 	// 上下文压缩（按上下文窗口百分比自动压缩旧历史）
 	CompressEnabled   bool    // 是否启用自动压缩
@@ -205,6 +207,10 @@ func (s *Session) runStream(ctx context.Context, input string, attachments []llm
 		s.Messages = s.Messages[len(s.Messages)-20:]
 	}
 	sendEvent(ctx, out, StreamEvent{Kind: "done", Final: reply})
+	if s.Memory != nil {
+		// 异步记录记忆，避免阻塞对话收尾；用 WithoutCancel 使记忆写入不受对话 ctx 取消影响。
+		go s.Memory.RecordTurn(context.WithoutCancel(ctx), provider, s.Workspace, input, reply)
+	}
 }
 
 // modeDesc 模式到提示词片段的映射。
@@ -342,6 +348,12 @@ func (s *Session) buildSystem(userInput string) string {
 		b.WriteString("\n\n## 可委派的子 Agent\n需要专门角色时调用 `spawn_subagent`，并提供名称和清晰任务。\n")
 		for _, definition := range s.Agents {
 			b.WriteString(fmt.Sprintf("- `%s`: %s\n", definition.Name, definition.Description))
+		}
+	}
+	if s.Memory != nil {
+		if mem := s.Memory.LoadContext(s.Workspace); mem != "" {
+			b.WriteString("\n\n")
+			b.WriteString(mem)
 		}
 	}
 	return b.String()

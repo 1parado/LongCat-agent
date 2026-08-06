@@ -40,6 +40,7 @@ import (
 	"LongCat-frontend/internal/im"
 	"LongCat-frontend/internal/llm"
 	"LongCat-frontend/internal/mcp"
+	"LongCat-frontend/internal/memory"
 	"LongCat-frontend/internal/skills"
 	"LongCat-frontend/internal/workspace"
 )
@@ -56,6 +57,7 @@ type api struct {
 	activeSessionID string
 	watcher         *workspace.Watcher
 	undo            *workspace.UndoStore
+	memory          *memory.Store
 	mcp             *mcp.Manager
 	im              *im.Bridge
 	cache           *cache.Cache[string, any]
@@ -86,6 +88,10 @@ func Run(addr string, m *llm.Manager, s *agent.Session) error {
 	if err != nil {
 		return fmt.Errorf("初始化撤销存储失败: %w", err)
 	}
+	memStore, err := memory.NewStore()
+	if err != nil {
+		return fmt.Errorf("初始化记忆存储失败: %w", err)
+	}
 	mcpManager := mcp.NewManager("")
 	_ = mcpManager.Load()
 	imBridge, err := im.NewBridge()
@@ -100,8 +106,8 @@ func Run(addr string, m *llm.Manager, s *agent.Session) error {
 			locale = i18n.Normalize(i18n.Locale(pref))
 		}
 	}
-	s.MCP, s.Undo, s.Activity = mcpManager, undo, agent.NewActivityTracker()
-	a := &api{manager: m, session: s, market: mkt, workspaces: ws, undo: undo, mcp: mcpManager, im: imBridge, cache: cache.New[string, any](5*time.Minute, 1000), locale: locale, settingsPath: settingsPath}
+	s.MCP, s.Undo, s.Activity, s.Memory = mcpManager, undo, agent.NewActivityTracker(), memStore
+	a := &api{manager: m, session: s, market: mkt, workspaces: ws, undo: undo, memory: memStore, mcp: mcpManager, im: imBridge, cache: cache.New[string, any](5*time.Minute, 1000), locale: locale, settingsPath: settingsPath}
 	a.imWorkspace.Store(s.Workspace)
 	// 注入 IM 消息处理器，并按上次持久化的启用意图恢复接收。
 	if imBridge != nil {
@@ -168,6 +174,17 @@ func Run(addr string, m *llm.Manager, s *agent.Session) error {
 	mux.HandleFunc("DELETE /api/cache/invalidate", a.cacheInvalidate)
 	mux.HandleFunc("GET /api/settings/locale", a.getLocale)
 	mux.HandleFunc("PUT /api/settings/locale", a.setLocale)
+
+	// 记忆：CRUD + 云同步（git CLI，手动触发）
+	mux.HandleFunc("GET /api/memory", a.memoryList)
+	mux.HandleFunc("POST /api/memory", a.memoryCreate)
+	mux.HandleFunc("GET /api/memory/read", a.memoryRead)
+	mux.HandleFunc("PUT /api/memory", a.memoryUpdate)
+	mux.HandleFunc("DELETE /api/memory", a.memoryDelete)
+	mux.HandleFunc("GET /api/memory/sync/status", a.memorySyncStatus)
+	mux.HandleFunc("POST /api/memory/sync/repo", a.memorySyncRepo)
+	mux.HandleFunc("POST /api/memory/sync/push", a.memorySyncPush)
+	mux.HandleFunc("POST /api/memory/sync/pull", a.memorySyncPull)
 
 	srv := &http.Server{Addr: addr, Handler: local(mux)}
 	return srv.ListenAndServe()

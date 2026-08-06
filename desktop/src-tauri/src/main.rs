@@ -50,9 +50,12 @@ fn find_backend() -> Option<PathBuf> {
     let mut candidates: Vec<PathBuf> = Vec::new();
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
+            // 安装包布局: bundle.resources 的 "LongCat-frontend.exe" 落到 INSTALLDIR（与桌面壳同级）
             candidates.push(dir.join(exe_name));
             // 开发布局: desktop/src-tauri/target/{debug,release}/ -> 项目根 bin/
             candidates.push(dir.join("../../../../bin").join(exe_name));
+            // 开发布局(备选): -> desktop/bin/
+            candidates.push(dir.join("../../../bin").join(exe_name));
         }
     }
     candidates.push(PathBuf::from("bin").join(exe_name));
