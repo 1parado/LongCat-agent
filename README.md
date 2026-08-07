@@ -69,7 +69,6 @@ Web UI 右上角标题栏的 🧠 按钮打开记忆面板，支持：
 
 ![pic8](pic8.png)
 
-桌面端启动后，点击标题栏的 🧠 即可打开记忆面板，查看或同步记忆。记忆服务随应用一起启动，无需额外配置。
 
 ## 快速启动
 
@@ -85,7 +84,6 @@ cd desktop/src-tauri
 cargo tauri dev
 ```
 
-详细说明见 [`AGENTS.md`](AGENTS.md)、[`DESIGN.md`](DESIGN.md) 与 [`如何启动和验证WebUI.md`](如何启动和验证WebUI.md)。
 
 ## License
 
